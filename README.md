@@ -22,6 +22,20 @@ Este arquivo é só o mapa do repositório.
 | 02 — Python Tutor (chatbot) | <https://02.backend-ai-dot.oladata.com.br> |
 | 03 — Busca semântica | <https://03.backend-ai-dot.oladata.com.br> |
 
+### Testando a API do 01 no Swagger
+
+A documentação abre sem chave, mas os endpoints `/books` exigem o cabeçalho
+`X-API-Key`. Chave da demonstração:
+
+```
+LHcP3HLI63DmhMKpvQ7cq7mQ07V79Shy
+```
+
+Em <https://api-01.backend-ai-dot.oladata.com.br/docs>, clique em **Authorize**, cole a
+chave e confirme; depois use **Try it out** em qualquer endpoint. Sem a chave, as
+chamadas a `/books` retornam `401`. A chave é pública de propósito (é só um ambiente de
+demonstração) e a API tem limite de requisições por IP.
+
 ## Organização das pastas
 
 ```
@@ -50,16 +64,24 @@ configurados.
 
 ## 01 — Biblioteca virtual
 
-Cadastro e busca de livros.
+Cadastro, busca, edição e exclusão de livros.
+
+> **Sobre a edição e a exclusão:** a Questão 1 da prova (`Prova - Backend IA.pdf`) pede
+> apenas o **cadastro** de livros (título, autor, data de publicação e resumo) e a
+> **consulta** por título ou autor. A atualização e a exclusão de registros **não foram
+> pedidas**, mas optei por implementá-las para entregar um CRUD completo: na API
+> (`PATCH /books/{id}` e `DELETE /books/{id}`, com as mesmas validações do cadastro e
+> testes) e na interface (botões **Editar** e **Excluir** nos detalhes do livro).
 
 - **[`01/backend/`](01/backend)**: API REST em FastAPI com SQLite via SQLAlchemy 2.0.
-  Cadastra livros e busca por título e/ou autor (busca parcial, sem diferenciar
-  maiúsculas, com paginação). Organizada em camadas (rotas → services → repositories →
+  Cadastra livros, busca por título e/ou autor (busca parcial, sem diferenciar
+  maiúsculas, com paginação), edita e exclui. Organizada em camadas (rotas → services → repositories →
   banco), com middleware de segurança (chave de API opcional, limite de requisições,
   hosts permitidos) e uma coleção do Postman em `postman/`.
   README: [inglês](01/backend/README.md) · [português](01/backend/README.pt-BR.md).
 - **[`01/frontend/`](01/frontend)**: interface em Plotly Dash, toda em português, que
-  consome a API: cadastro de livros, busca no catálogo e um painel com estatísticas.
+  consome a API: cadastro de livros, busca no catálogo (com edição e exclusão a partir
+  dos detalhes do livro) e um painel com estatísticas.
   README: [inglês](01/frontend/README.md) · [português](01/frontend/README.pt-BR.md).
 
 O README da pasta 01 ([português](01/README.pt-BR.md) · [inglês](01/README.md)) mostra
@@ -105,10 +127,7 @@ README: [português](03/semantic_search/README.pt-BR.md) ·
 
 ## Rodando
 
-**Um projeto por vez:** entre na pasta do projeto e siga o README dele (em geral,
-`uv sync` e o comando da interface desejada).
-
-**Todos juntos com Docker:** na raiz,
+Todos os projetos sobem juntos com Docker. Na raiz:
 
 ```bash
 cp .env.example .env          # Windows (PowerShell): Copy-Item .env.example .env
@@ -154,13 +173,3 @@ com `docker network create proxy` (e `PROXY_NETWORK=proxy`) e publique a porta d
 roteador num `docker-compose.override.yml` (`services: caddy: ports: ["8080:80"]`); os
 endereços ficam `http://01.localhost:8080`, `http://02.localhost:8080` e assim por
 diante.
-
-## Qualidade
-
-Todos os projetos usam as mesmas ferramentas, rodadas de dentro da pasta de cada um:
-
-```bash
-uv run pytest                 # testes (sem chamadas reais à OpenAI)
-uv run ruff check . && uv run ruff format --check .
-uv run mypy                   # modo estrito
-```

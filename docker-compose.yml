@@ -54,6 +54,8 @@ services:
       # The public host (forwarded unchanged by Caddy) plus the internal names.
       ALLOWED_HOSTS: api-01.${DOMAIN:-localhost},library-api,localhost,127.0.0.1
       API_KEY: ${API_KEY:-}
+      # Public demo: the key is shown at the top of /docs (and in the README).
+      DOCS_SHOW_API_KEY: "true"
       # Uvicorn reads X-Forwarded-For only from trusted proxies. The API is not
       # published outside the Compose network, so the rate limit sees the real
       # client IP sent by Caddy instead of Caddy's own.
@@ -76,6 +78,10 @@ services:
       # Dash callbacks run on the server, so the UI calls the API internally.
       API_BASE_URL: http://library-api:8000
       API_KEY: ${API_KEY:-}
+      # The "Coleção Postman" download must point at the public API, not the
+      # internal name above. The demo key is already public (README, /docs).
+      PUBLIC_API_URL: https://api-01.${DOMAIN:-localhost}
+      POSTMAN_INCLUDE_API_KEY: "true"
     depends_on:
       library-api:
         condition: service_healthy

@@ -141,6 +141,7 @@ Todas têm valor padrão e podem ser sobrescritas por variáveis de ambiente ou 
 | `ALLOWED_HOSTS`               | `localhost,127.0.0.1,api`                     | Valores aceitos no header `Host` (separados por vírgula; `*` = qualquer) |
 | `API_KEY`                     | (vazio = desligado)                           | Se definido, `/books` exige `X-API-Key: <valor>`            |
 | `ENABLE_DOCS`                 | `true`                                        | Serve `/docs`, `/redoc` e `/openapi.json`                   |
+| `DOCS_SHOW_API_KEY`           | `false`                                       | Mostra a `API_KEY` no topo do `/docs` (só para demonstrações públicas) |
 | `MAX_REQUEST_BODY_BYTES`      | `65536`                                       | Maior corpo de requisição aceito (acima disso, 413)         |
 | `RATE_LIMIT_REQUESTS`         | `300`                                         | Requisições por IP por janela (`0` desliga)                 |
 | `RATE_LIMIT_WINDOW_SECONDS`   | `60`                                          | Duração da janela do rate limit                             |
@@ -290,7 +291,7 @@ Versione o `pyproject.toml` e o `uv.lock` atualizados.
 ## Collection do Postman
 
 A pasta [`postman/`](postman) tem uma collection pronta para importar, com todas as requisições
-da API (34 requisições em 6 pastas, cada uma com testes automáticos):
+da API (45 requisições em 7 pastas, cada uma com testes automáticos):
 
 | Pasta                           | O que cobre                                                             |
 | ------------------------------- | ----------------------------------------------------------------------- |
@@ -299,13 +300,14 @@ da API (34 requisições em 6 pastas, cada uma com testes automáticos):
 | 3. Validation errors (422)      | Campos ausentes ou vazios, datas inválidas ou futuras, campo extra, resumo longo |
 | 4. Search books                 | Título, autor, os dois juntos, paginação, sem resultados, parâmetros inválidos |
 | 5. Get book by id               | Encontrado, 404, ids inválidos                                          |
-| 6. Security                     | Chave ausente ou errada (401), corpo grande demais (413), CORS, header Host, headers de segurança |
+| 6. Edit & delete                | `PATCH` (parcial, UTC, 422, 404) e `DELETE` (204 e 404) — além do pedido na prova |
+| 7. Security                     | Chave ausente ou errada (401), corpo grande demais (413), CORS, header Host, headers de segurança |
 
 1. No Postman, use **Import** em `postman/library-api.postman_collection.json` e
    `postman/library-api.local.postman_environment.json`.
 2. Selecione o environment **Library API - local**. Se o `.env` define `API_KEY`, cole o mesmo
    valor na variável `apiKey` do environment (ela é secreta e vem vazia no arquivo).
-3. Rode a pasta 2 antes das pastas 4 e 5: elas precisam de dados e do `bookId` salvo pela
+3. Rode a pasta 2 antes das pastas 4, 5 e 6: elas precisam de dados e do `bookId` salvo pela
    primeira requisição de cadastro.
 
 Também dá para rodar a collection inteira pelo terminal com o
@@ -323,6 +325,8 @@ npx newman run postman/library-api.postman_collection.json \
 | POST   | `/books`           | Cadastra um livro                               | 201     | 413, 422 |
 | GET    | `/books`           | Busca por `title` / `author`, com `skip`/`limit` | 200     | 422      |
 | GET    | `/books/{book_id}` | Busca um livro por ID                           | 200     | 404, 422 |
+| PATCH  | `/books/{book_id}` | Edita um livro (só os campos enviados)          | 200     | 404, 413, 422 |
+| DELETE | `/books/{book_id}` | Exclui um livro                                 | 204     | 404, 422 |
 | GET    | `/health`          | Health check (público, sem rate limit)          | 200     | —        |
 
 Todo endpoint de `/books` também pode retornar `401` (com `API_KEY` definida) e `429` (rate

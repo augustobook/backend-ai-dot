@@ -212,6 +212,22 @@ def test_docs_can_be_disabled(make_client: AppFactory) -> None:
     assert client.get("/openapi.json").status_code == 404
 
 
+def test_docs_hide_api_key_by_default(make_client: AppFactory) -> None:
+    """The key never appears in the API schema unless explicitly allowed."""
+    client = make_client(api_key="s3cret")
+
+    assert "s3cret" not in client.get("/openapi.json").text
+
+
+def test_docs_show_api_key_when_enabled(make_client: AppFactory) -> None:
+    """With `DOCS_SHOW_API_KEY=true`, a public demo prints its key in the docs."""
+    client = make_client(api_key="s3cret", docs_show_api_key=True)
+
+    description = client.get("/openapi.json").json()["info"]["description"]
+
+    assert "`s3cret`" in description
+
+
 # --- Error handling -----------------------------------------------------------
 
 

@@ -32,19 +32,39 @@ REST API for a virtual library.
 * **Register books** with title, author, publication date, summary and registration time.
 * **Search books** by partial, case-insensitive title and/or author, with pagination.
 * **Get a book** by its id.
+* **Edit a book** (partial update of any field) or **delete** it.
 
 Security: requests are rate limited per client, bodies are size limited and, when the
 server sets `API_KEY`, every `/books` request must send it in the `X-API-Key` header.
 """
 
 TAGS_METADATA = [
-    {"name": "books", "description": "Register, search and retrieve books."},
+    {"name": "books", "description": "Register, search, retrieve, edit and delete books."},
     {"name": "health", "description": "Operational endpoints."},
 ]
 
 # The health check must keep answering under load so orchestrators do not
 # restart a healthy container.
 RATE_LIMIT_EXEMPT_PATHS = ("/health",)
+
+
+def build_description(settings: Settings) -> str:
+    """Return the docs description, with the demo API key when it may be shown.
+
+    Args:
+        settings: Settings with the API key and the `docs_show_api_key` flag.
+
+    Returns:
+        `API_DESCRIPTION`, plus how to authorize when the key is public.
+    """
+    if not settings.docs_show_api_key or settings.api_key is None:
+        return API_DESCRIPTION
+    key = settings.api_key.get_secret_value()
+    return (
+        f"{API_DESCRIPTION}\n"
+        f"**Demo API key:** `{key}`. Click **Authorize**, paste it and confirm, "
+        "then use **Try it out** on any `/books` endpoint.\n"
+    )
 
 
 async def book_not_found_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -102,8 +122,8 @@ def configure_security(app: FastAPI, settings: Settings) -> None:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        # The API is read/create only and uses no cookies, so nothing else is needed.
-        allow_methods=["GET", "POST"],
+        # The API uses no cookies, so only its own methods and headers are allowed.
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Content-Type", API_KEY_HEADER],
         allow_credentials=False,
         max_age=600,
@@ -146,7 +166,7 @@ def create_app(settings: Settings | None = None, db_engine: Engine | None = None
     docs_enabled = settings.enable_docs
     app = FastAPI(
         title=settings.app_name,
-        description=API_DESCRIPTION,
+        description=build_description(settings),
         version=settings.app_version,
         openapi_tags=TAGS_METADATA,
         lifespan=lifespan,

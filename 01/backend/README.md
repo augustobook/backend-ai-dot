@@ -137,6 +137,7 @@ Copy [`.env.example`](.env.example) to `.env` to customize them.
 | `ALLOWED_HOSTS`               | `localhost,127.0.0.1,api`                     | Accepted `Host` headers (comma-separated; `*` = any)     |
 | `API_KEY`                     | (empty = disabled)                            | When set, `/books` requires `X-API-Key: <value>`         |
 | `ENABLE_DOCS`                 | `true`                                        | Serve `/docs`, `/redoc` and `/openapi.json`              |
+| `DOCS_SHOW_API_KEY`           | `false`                                       | Print `API_KEY` at the top of `/docs` (public demos only) |
 | `MAX_REQUEST_BODY_BYTES`      | `65536`                                       | Largest request body accepted (413 above it)             |
 | `RATE_LIMIT_REQUESTS`         | `300`                                         | Requests per client IP per window (`0` disables)         |
 | `RATE_LIMIT_WINDOW_SECONDS`   | `60`                                          | Rate-limit window length                                 |
@@ -282,8 +283,8 @@ Commit the updated `pyproject.toml` and `uv.lock`.
 
 ## Postman collection
 
-[`postman/`](postman) has a ready-to-import collection with every request of the API (34
-requests in 6 folders, each with automated tests):
+[`postman/`](postman) has a ready-to-import collection with every request of the API (45
+requests in 7 folders, each with automated tests):
 
 | Folder                          | What it covers                                                        |
 | ------------------------------- | --------------------------------------------------------------------- |
@@ -292,13 +293,14 @@ requests in 6 folders, each with automated tests):
 | 3. Validation errors (422)      | Missing/blank fields, bad dates, future dates, unknown fields, long summary |
 | 4. Search books                 | Title, author, both, pagination, no results, invalid parameters       |
 | 5. Get book by id               | Found, 404, invalid ids                                               |
-| 6. Security                     | Missing/wrong API key (401), body too large (413), CORS, Host header, security headers |
+| 6. Edit & delete                | `PATCH` (partial, UTC, 422, 404) and `DELETE` (204 and 404) — beyond the assignment |
+| 7. Security                     | Missing/wrong API key (401), body too large (413), CORS, Host header, security headers |
 
 1. In Postman, **Import** `postman/library-api.postman_collection.json` and
    `postman/library-api.local.postman_environment.json`.
 2. Select the **Library API - local** environment. If `.env` sets `API_KEY`, paste the same value
    into the environment's `apiKey` (it is a secret variable and is empty in the file).
-3. Run folder 2 before folders 4 and 5: they need data and the `bookId` saved by the first
+3. Run folder 2 before folders 4, 5 and 6: they need data and the `bookId` saved by the first
    create request.
 
 The whole collection can also run from the terminal with
@@ -316,6 +318,8 @@ npx newman run postman/library-api.postman_collection.json \
 | POST   | `/books`           | Register a book                               | 201     | 413, 422 |
 | GET    | `/books`           | Search by `title` / `author`, `skip`, `limit` | 200     | 422      |
 | GET    | `/books/{book_id}` | Get a book by id                              | 200     | 404, 422 |
+| PATCH  | `/books/{book_id}` | Edit a book (only the fields sent)            | 200     | 404, 413, 422 |
+| DELETE | `/books/{book_id}` | Delete a book                                 | 204     | 404, 422 |
 | GET    | `/health`          | Health check (public, never rate limited)     | 200     | —        |
 
 Every `/books` endpoint may also return `401` (when `API_KEY` is set) and `429` (rate limit).

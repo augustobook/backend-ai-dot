@@ -39,6 +39,8 @@ class Settings(BaseSettings):
         allowed_hosts: Accepted values of the `Host` header.
         api_key: When set, every `/books` request must send it in `X-API-Key`.
         enable_docs: Whether `/docs`, `/redoc` and `/openapi.json` are served.
+        docs_show_api_key: Whether the docs page prints `api_key`, so visitors of a
+            public demo can try the endpoints. Never enable it for a real secret.
         max_request_body_bytes: Largest request body accepted.
         rate_limit_requests: Requests allowed per client per window (0 disables).
         rate_limit_window_seconds: Length of the rate-limit window.
@@ -84,6 +86,9 @@ class Settings(BaseSettings):
         default=None, description="Optional API key required in the X-API-Key header."
     )
     enable_docs: bool = Field(default=True, description="Serve the interactive API docs.")
+    docs_show_api_key: bool = Field(
+        default=False, description="Print the API key in the docs (public demos only)."
+    )
     max_request_body_bytes: int = Field(
         default=64 * 1024, ge=1024, description="Largest request body accepted."
     )
