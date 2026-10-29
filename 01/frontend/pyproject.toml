@@ -1,0 +1,55 @@
+[project]
+name = "library-ui"
+version = "0.1.0"
+description = "Plotly Dash frontend for the Library API."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dash>=4.4.1",
+    "dash-bootstrap-components>=2.0.4",
+    "gunicorn>=26.2.0",
+    "httpx>=0.28.1",
+    "tzdata>=2026.6",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
+    "respx>=0.23.1",
+    "ruff>=0.17.3",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "N", "SIM", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["dash.*", "dash_bootstrap_components.*", "plotly.*"]
+ignore_missing_imports = true
+follow_untyped_imports = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Dash ships a pytest plugin for browser tests that is not used here.
+addopts = "-ra -p no:dash"
+# DataTable is a stated requirement; Dash 4 suggests dash-ag-grid as its successor.
+filterwarnings = ["ignore:\\s*The dash_table.DataTable will be removed:DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["library_ui"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true

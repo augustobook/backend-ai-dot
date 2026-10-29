@@ -1,0 +1,61 @@
+---
+id: chr-09
+title: Cancro da mama
+category: chronic-diseases
+tags:
+- câncer de mama
+- rastreamento
+- oncologia
+author: Colaboradores da Wikipédia
+source_url: https://pt.wikipedia.org/wiki/Cancro_da_mama
+source_revision: 73215113
+license: CC BY-SA 4.0
+license_url: https://creativecommons.org/licenses/by-sa/4.0/deed.pt-br
+retrieved_at: '2026-10-29'
+adapted: Plain-text extraction; reference sections removed; cut at a section boundary
+---
+Cancro da mama (português europeu) ou câncer de mama (português brasileiro) ou carcinoma da mama é o cancro que se desenvolve no tecido mamário. Entre os sinais de cancro da mama estão o aparecimento de um nódulo na mama ou perto da mama na zona da axila; alterações na forma ou na aparência da mama, como retração do mamilo, pele da mama ou aréola, mamilo com aparência escamosa, vermelha, inchada ou com saliências e reentrâncias; ou ainda sensibilidade no mamilo e secreção ou perda de líquido pelo mamilo. Em pessoas com a doença disseminada, pode também verificar-se dor óssea, gânglios linfáticos inchados, falta de ar e icterícia.
+
+Entre os fatores de risco para o desenvolvimento de cancro da mama estão o sexo feminino, a idade, obesidade, falta de exercício físico, o consumo de álcool, a terapia de reposição hormonal durante a menopausa, radiação ionizante, idade precoce da primeira menstruação, ter filhos em idade tardia ou não ter tido filhos. Entre 5 e 10% dos casos são causados por genes herdados dos pais da pessoa, entre os quais o BRCA1 e o BRCA2. O cancro da mama geralmente desenvolve-se nas células do revestimento dos canais mamários e dos lóbulos onde é produzido o leite. Os cancros que se desenvolvem nos canais são denominados carcinomas ductais, enquanto que os que se desenvolvem nos lóbulos são denominados carcinomas lobulares. Existem ainda mais 18 sub-tipos de cancro da mama. Alguns cancros desenvolvem-se a partir de condições pré-malignas como o carcinoma ductal in situ. O diagnóstico de cancro da mama é confirmado através de uma biópsia do nódulo em questão. Uma vez realizado o diagnóstico, são realizados mais exames para determinar se o cancro se disseminou para além da mama e a que tratamentos pode responder.
+
+A ponderação entre as vantagens e desvantagens do rastreio do cancro da mama ainda é um tópico controverso. Uma revisão de 2013 da Cochrane afirmou que não é claro que o rastreio mamográfico tenha mais benefícios ou malefícios. Outra revisão de 2009 por um grupo de trabalho dos EUA (US Preventive Services Task Force) encontrou evidências de benefícios em pessoas com 40 a 70 anos de idade, tendo recomendado o rastreio a cada dois anos para as mulheres entre os 50 e 74 anos de idade.
+
+Como medida de prevenção, em pessoas com risco elevado de desenvolver cancro da mama, podem ser usados os fármacos tamoxifeno e raloxifeno. Outra medida de preventiva em mulheres com risco agravado é a remoção cirúrgica de ambas as mamas. Em pessoas a quem foi diagnosticado cancro, estão disponíveis uma série de tratamentos, incluindo cirurgia, radioterapia, terapia hormonal e terapia direcionada. Dependendo do tipo de intervenção necessário, a cirurgia pode conservar a mama (p.e. quadrantectomia) ou ser realizada uma mastectomia. A reconstrução de mama pode ter lugar durante a cirurgia ou numa data posterior. Nas pessoas em que o cancro já se disseminou para outras partes do corpo, os tratamentos destinam-se sobretudo a prolongar a vida, melhorar o conforto e a qualidade de vida.
+
+O prognóstico para o cancro da mama varia em função do tipo de cancro, extensão da doença e idade da pessoa. A taxa de sobrevivência em países desenvolvidos é elevada, sendo mais reduzida nos países em vias de desenvolvimento. Quando se considera todo o mundo, o cancro da mama é a causa mais comum de cancro em mulheres, correspondendo a 25% de todos os casos. Em 2012 foi responsável por 1,68 milhão de casos e 522 000 mortes. É mais comum em países desenvolvidos e é mais de 100 vezes mais comum em mulheres do que em homens.
+
+## Sinais e sintomas
+
+O primeiro sintoma percetível de cancro da mama é geralmente o aparecimento de um nódulo na mama ou na zona dos gânglios linfáticos das axilas, cuja sensação durante a palpação é diferente do tecido envolvente. Mais de 80% dos casos de cancro da mama são descobertos quando a mulher sente um nódulo durante a palpação. Para além dos nódulos, entre os sinais de um possível cancro da mama estão um espessamento diferente do restante tecido mamário; alterações na forma, tamanho ou aparência de uma mama; a retração ou alteração de posição ou forma de um mamilo; pele da mama, aréola ou mamilo com aparência escamosa, vermelha, inchada ou com saliências e reentrâncias; secreção ou perda de líquido pelo mamilo; dor constante em parte da mama ou da axila e inchaço por baixo da axila ou à volta da clavícula.
+
+O carcinoma inflamatório da mama é um tipo particular de cancro da mama cujo diagnóstico é bastante difícil, uma vez que não se manifesta através de um nódulo palpável. Os sintomas podem-se assemelhar a uma inflamação das mamas, incluindo prurido, dor, inchaço, inversão do mamilo, calor, vermelhidão por toda a mama e textura da pele semelhante a uma casaca de laranja. Em alguns casos, o cancro da mama apresenta-se como doença metastática; ou seja, cancro que se disseminou no corpo para além do órgão inicial. Os sintomas causados pelo cancro da mama metastático dependem da localização das metástases. Os locais mais comuns são os ossos, fígado, pulmões e cérebro.
+
+A doença de Paget da mama é uma síndrome maligna que é responsável por 1 a 4,3% de todos os cancros da mama. Manifesta-se através de alterações na pele semelhantes ao eczema, como vermelhidão, descoloração ou escamamento da pele do mamilo. À medida que a doença avança, os sintomas incluem formigueiro, prurido, aumento da sensibilidade e dor, podendo também verificar-se secreções do mamilo. Cerca de metade das mulheres diagnosticadas com doença de Paget da mama também apresentam um nódulo no peito. Em casos raros, aquilo que inicialmente aparenta ser um fibroadenoma (nódulo duro, móvel e não-canceroso) pode na realidade ser um tumor filoide, responsável por 0,5% dos cancros da mama. Estes tumores formam-se no estroma (tecido conjuntivo) da mama e são classificados em benignos, duvidosos ou malignos.
+
+Existem também sintomas não específicos de cancro da mama; isto é, sintomas que também podem ser manifestações de outras doenças. A perda de peso inexplicável pode por vezes ser um sinal de cancro da mama, assim como sintomas de febre e calafrios. As dores nos ossos ou articulações, icterícia e sintomas neurológicos podem por vezes ser manifestações de cancro da mama metastático. A dor nas mamas é uma ferramenta pouco fidedigna para determinar a presença ou ausência de cancro da mama, mas pode ser indicativa de outras doenças mamárias.
+
+A maior parte dos casos de sintomas de doenças mamárias não implicam um diagnóstico de cancro. Por exemplo, só menos de 20% dos nódulos detectados é que revelam ser cancerígenos. As doenças benignas da mama, como a mastite e o fibroadenoma, são causas muito mais comuns dos sintomas aqui descritos. No entanto, a aparição de qualquer sintoma deve ser levada a sério, uma vez que existe a possibilidade de se tratar de cancro da mama, qualquer que seja a idade da pessoa.
+
+## Fatores de risco
+
+Os fatores de risco para o cancro da mama podem ser divididos em duas categorias: modificáveis e não modificáveis. Os modificáveis são comportamentos que as próprias pessoas podem alterar, como o consumo de bebidas alcoólicas, enquanto que os não modificáveis são fatores que não podem ser alterados, como a idade ou o sexo da pessoa. Os principais fatores de risco para o cancro da mama são o sexo feminino e progressão da idade. Entre outros potenciais fatores de risco estão fatores genéticos, não ter tido filhos ou não ter amamentado, a maior quantidade de determinadas hormonas, e a obesidade, principalmente após a menopausa.
+
+### Estilo de vida
+
+Fumar aparenta aumentar o risco de cancro de mama. O risco aumenta de forma proporcional à quantidade fumada e a quanto mais cedo na vida se começou a fumar. Em fumadores veteranos, o risco é entre 35% e 50% maior do que em não fumadores. Cerca de 10% dos casos da doença estão relacionados com a ausência de atividade física. Permanecer sentado regularmente e por longos períodos de tempo está associado a uma maior mortalidade do cancro da mama. Este risco não desaparece com o exercício regular, embora haja uma diminuição.
+
+Existe uma relação entre a dieta e o cancro da mama. O risco da doença é maior com uma dieta rica em gorduras, com a ingestão de álcool, e com a obesidade relacionada com níveis excessivos de colesterol. A insuficiência de iodo na dieta pode também influenciar o risco.
+
+Existe uma associação entre a contraceção hormonal e o desenvolvimento de cancro da mama durante a pré-menopausa, embora esteja ainda a ser debatido se o uso de contracetivos orais causa de facto a doença. No entanto, mesmo que haja alguma relação, o efeito global será pouco significativo. Além disso, não é claro se essa associação ainda continua a existir com os contracetivos orais de última geração. Em pessoas com mutações genéticas que causam predisposição para cancro da mama (genes BRCA1 ou BRCA2) ou que têm antecedentes familiares de cancro da mama, o uso de contracetivos orais de última geração não aparenta ter qualquer influência no risco de cancro da mama. As mutações que podem causar cancro da mama têm sido associadas experimentalmente à exposição ao estrogénio.
+
+A associação entre amamentação e o cancro da mama ainda não está inequivocamente demonstrada. Alguns estudos apontam a existência de uma associação enquanto outros não. No início da década de 1980, foi levantada a hipótese de que o aborto induzido aumentava o risco de vir a desenvolver cancro da mama. No entanto, esta hipótese foi alvo de investigação extensa nas décadas seguintes, tendo a comunidade científica concluído que nem o aborto induzido nem o aborto espontâneo estão associados a qualquer aumento do risco de cancro da mama.
+
+Entre outros fatores de risco estão a radiação, e o trabalho por turnos. Estão também associados ao aumento do risco alguns produtos químicos, como o bifenilpoliclorado, hidrocarbonetos aromáticos policíclicos, solventes orgânicos, determinados pesticidas e possivelmente substâncias químicas em tintas permanentes e produtos para alisar cabelo. Embora a radiação recebida durante uma mamografia seja em doses muito baixas, estima-se que o rastreio anual entre os 40 e os 80 anos de idade seja a causa de aproximadamente 225 casos fatais de cancro da mama por cada milhão de mulheres rastreadas.
+
+### Genética
+
+Acredita-se que a predisposição genética seja a principal causa de 5 a 10% de todos os casos de cancro da mama e que possa ter um papel menor na maioria dos restantes casos. Em menos de 5% dos casos, a genética tem um papel mais ativo ao causar síndrome de cancro hereditário da mama e ovário em pessoas com mutações nos genes BRCA1 e BRCA2 que são supressores tumorais, responsáveis por regular alguns fatores do metabolismo celular, como reparação do DNA e expressão gênica, tal mutação resulta na perda de função desses dois genes, provocando o efeito carcinogênico. Estas mutações correspondem a 90% do total de influência genética, com um risco de cancro da mama de 60 a 80% em pessoas afetadas. Entre outros genes com mutações significativas estão o p53 (síndrome de Li-Fraumeni), PTEN (síndrome de Cowden), STK11 (síndrome de Peutz–Jeghers), CHEK2, ATM, BRIP1 e PALB2.
+
+Em pessoas com nenhum, um ou dois parentes afetados, o risco de cancro da mama antes dos 80 anos de idade é de 7,8%, 13,3% e 21,1%, respetivamente, sendo a mortalidade da doença de 2,3%, 4,2% e 7,6%, também respetivamente. Em pessoas com um parente em primeiro grau com a doença, o risco de vir a ter cancro da mama entre os 40 e 50 anos de idade é o dobro em relação à generalidade da população.
+
+O gene GATA3 controla diretamente a expressão dos recetores de estrogénio e de outros genes associados com a diferenciação epitelial. A perda do GATA3 provoca a perda de diferenciação e um diagnóstico menos favorável devido à invasão celular e metástase.

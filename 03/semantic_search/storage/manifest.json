@@ -1,0 +1,18 @@
+{
+  "embedding_model": "intfloat/multilingual-e5-small",
+  "embedding_model_revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+  "dimension": 384,
+  "metric": "cosine (inner product of L2-normalized vectors)",
+  "index_type": "IndexIDMap2(IndexFlatIP)",
+  "document_count": 100,
+  "chunk_count": 1477,
+  "chunk_max_tokens": 256,
+  "chunk_overlap_tokens": 48,
+  "chunk_min_tokens": 40,
+  "chunker_version": "2",
+  "dataset_hash": "99ec4a7728c58ec9f6b84c576db6a5f2ce8a1a07d87862aae8b2bd1c6224c313",
+  "created_at": "2026-10-29T13:50:53.959486Z",
+  "enrichment_model": "gpt-5-nano",
+  "enrichment_prompt_version": "2",
+  "question_count": 7162
+}

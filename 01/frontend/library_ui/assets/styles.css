@@ -1,0 +1,121 @@
+/* Virtual Library: small refinements on top of the Bootswatch FLATLY theme. */
+
+:root {
+  --vl-bg: #f4f6f9;
+  --vl-muted: #6c757d;
+  --vl-accent: #18bc9c;
+}
+
+body {
+  background-color: var(--vl-bg);
+}
+
+.card {
+  border-radius: 0.75rem;
+}
+
+/* Navbar brand: "Biblioteca Virtual" followed by the client name. */
+.brand-client {
+  border-left: 1px solid rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.9rem;
+  font-weight: 400;
+  margin-left: 0.75rem;
+  padding-left: 0.75rem;
+}
+
+/* Tabs: underline style instead of boxed tabs. */
+.nav-tabs-modern {
+  border-bottom: 1px solid #dee2e6;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.nav-tabs-modern .nav-link {
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--vl-muted);
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 0.75rem 1.25rem;
+}
+
+.nav-tabs-modern .nav-link.active,
+.nav-tabs-modern .nav-link:hover {
+  background: transparent;
+  border-bottom-color: var(--vl-accent);
+  color: #2c3e50;
+}
+
+/* Date and time inputs only need room for "DD/MM/AAAA" / "HH:MM". */
+.date-input {
+  max-width: 200px;
+}
+
+.time-input {
+  max-width: 130px;
+}
+
+/* Inline errors are always red (Bootstrap's danger color), never green. */
+.invalid-feedback {
+  color: var(--bs-form-invalid-color, #e74c3c);
+}
+
+/* Results table: highlight the hovered row to hint that rows are clickable. */
+#search-results-table .dash-spreadsheet tr:hover td {
+  background-color: #f1f9f7 !important;
+}
+
+/* Book details modal. */
+.detail-label {
+  color: var(--vl-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 0.15rem;
+}
+
+.detail-value {
+  font-size: 1.05rem;
+}
+
+.detail-summary {
+  white-space: pre-line;
+  line-height: 1.6;
+}
+
+/* Dashboard summary cards. */
+.stat-label {
+  color: var(--vl-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.stat-icon {
+  color: var(--vl-accent);
+  font-size: 1.4rem;
+}
+
+.stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0.35rem 0 0.15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Friendly empty states. */
+.empty-state {
+  padding: 3rem 1rem;
+}
+
+.empty-state-icon {
+  color: #ced4da;
+  font-size: 3rem;
+}

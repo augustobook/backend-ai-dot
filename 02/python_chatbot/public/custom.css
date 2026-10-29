@@ -1,0 +1,6 @@
+/* Hide the "no conversations found" box of the sidebar: with an empty history,
+   the conversation list simply shows nothing. Only the informational box
+   (role="status") is hidden; loading errors (role="alert") stay visible. */
+#thread-history .alert[role="status"] {
+  display: none;
+}

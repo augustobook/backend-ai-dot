@@ -1,0 +1,50 @@
+# Runs the whole Virtual Library: `docker compose up --build`
+#   API:      http://localhost:8000/docs
+#   Frontend: http://localhost:8050
+
+services:
+  api:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: sqlite:////app/data/library.db
+      LOG_LEVEL: INFO
+      # Security (see backend/README.md): browsers on these origins may call the API,
+      # and only these Host headers are accepted ("api" is the Compose service name).
+      CORS_ORIGINS: http://localhost:8050,http://127.0.0.1:8050
+      ALLOWED_HOSTS: localhost,127.0.0.1,api
+      # Optional shared secret: export API_KEY=... before `docker compose up`.
+      API_KEY: ${API_KEY:-}
+      RATE_LIMIT_REQUESTS: 300
+      RATE_LIMIT_WINDOW_SECONDS: 60
+    volumes:
+      # Persist the SQLite database across container restarts and rebuilds.
+      - library-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "8050:8050"
+    environment:
+      # Dash callbacks run on the server, so the frontend container calls the
+      # API through the Compose network by service name, not via localhost.
+      API_BASE_URL: http://api:8000
+      # Must match the API's key (empty when the API has none).
+      API_KEY: ${API_KEY:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  library-data:

@@ -1,0 +1,115 @@
+# Runs every project behind one Caddy reverse proxy: `docker compose up -d --build`
+#   https://DOMAIN            landing page linking to every project
+#   https://01.DOMAIN         01 - Virtual Library (Dash)
+#   https://api-01.DOMAIN     01 - Virtual Library API (/docs)
+#   https://02.DOMAIN         02 - Python Tutor chatbot (Chainlit)
+#   https://03.DOMAIN         03 - Semantic search (Dash)
+#
+# Settings come from two places:
+#   - each project's own `.env` (`env_file:` below): the same file used when the
+#     project runs alone with `uv run`, so a setting is changed in one place;
+#   - `.env` next to this file (see `.env.example`): DOMAIN and the secrets.
+#     Its values override the project files.
+# `environment:` also sets what only makes sense inside the containers (database
+# path, internal URLs, hosts derived from DOMAIN), overriding the project files.
+# With DOMAIN=localhost everything runs locally at https://01.localhost etc.
+#
+# Only Caddy publishes ports; the apps are reached through the Compose network
+# by service name. Caddy issues and renews the HTTPS certificates by itself.
+
+services:
+  caddy:
+    image: caddy:2.10
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/landing:/srv/landing:ro
+      # Certificates must survive restarts, or Let's Encrypt rate limits kick in.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - library-api
+      - library-ui
+      - chatbot
+      - search
+    restart: unless-stopped
+
+  # --- 01: Virtual Library ------------------------------------------------------
+  library-api:
+    build:
+      context: ./01/backend
+    env_file: ./01/backend/.env
+    environment:
+      DATABASE_URL: sqlite:////app/data/library.db
+      CORS_ORIGINS: https://01.${DOMAIN:-localhost}
+      # The public host (forwarded unchanged by Caddy) plus the internal names.
+      ALLOWED_HOSTS: api-01.${DOMAIN:-localhost},library-api,localhost,127.0.0.1
+      API_KEY: ${API_KEY:-}
+      # Uvicorn reads X-Forwarded-For only from trusted proxies. The API is not
+      # published outside the Compose network, so the rate limit sees the real
+      # client IP sent by Caddy instead of Caddy's own.
+      FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      - library-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+    restart: unless-stopped
+
+  library-ui:
+    build:
+      context: ./01/frontend
+    env_file: ./01/frontend/.env
+    environment:
+      # Dash callbacks run on the server, so the UI calls the API internally.
+      API_BASE_URL: http://library-api:8000
+      API_KEY: ${API_KEY:-}
+    depends_on:
+      library-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- 02: Python Tutor chatbot -------------------------------------------------
+  chatbot:
+    build:
+      context: ./02/python_chatbot
+    env_file: ./02/python_chatbot/.env
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
+      # Optional: when empty, one is generated and kept in the data volume.
+      CHAINLIT_AUTH_SECRET: ${CHAINLIT_AUTH_SECRET:-}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      CHAINLIT_DATABASE_PATH: /app/data/chat_history.db
+    volumes:
+      - chatbot-data:/app/data
+    restart: unless-stopped
+
+  # --- 03: Semantic search ------------------------------------------------------
+  search:
+    build:
+      context: ./03/semantic_search
+    env_file: ./03/semantic_search/.env
+    environment:
+      # Optional: without it, queries are searched as typed (no LLM rewrite).
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # The image runs on CPU (CPU-only torch), whatever the project .env says.
+      DEVICE: cpu
+    volumes:
+      # Downloaded Hugging Face models (~1 GB), reused across restarts.
+      - search-models:/app/.cache/huggingface
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:
+  library-data:
+  chatbot-data:
+  search-models:

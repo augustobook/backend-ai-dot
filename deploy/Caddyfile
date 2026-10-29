@@ -1,0 +1,31 @@
+# One site block per host name. Every name points to the same server IP in DNS;
+# Caddy reads the requested host (Host header / TLS SNI) and picks the block.
+# {$DOMAIN} comes from docker-compose (e.g. backend-ai-dot.oladata.com.br).
+# For each block Caddy gets an HTTPS certificate automatically (Let's Encrypt
+# for a public domain, a local CA for *.localhost).
+
+{$DOMAIN} {
+	root * /srv/landing
+	file_server
+	encode zstd gzip
+}
+
+01.{$DOMAIN} {
+	reverse_proxy library-ui:8050
+	encode zstd gzip
+}
+
+api-01.{$DOMAIN} {
+	reverse_proxy library-api:8000
+	encode zstd gzip
+}
+
+# Chainlit streams over WebSockets; reverse_proxy upgrades them transparently.
+02.{$DOMAIN} {
+	reverse_proxy chatbot:8000
+}
+
+03.{$DOMAIN} {
+	reverse_proxy search:8065
+	encode zstd gzip
+}

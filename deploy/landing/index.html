@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Backend IA</title>
+  <meta name="description" content="Projetos de backend e IA: API REST, chatbot com LLM e busca semântica.">
+  <style>
+    :root {
+      --bg: #f7f7f5;
+      --surface: #ffffff;
+      --text: #1c1c1e;
+      --muted: #5f6368;
+      --border: #e3e3df;
+      --accent: #2f6fde;
+      --accent-soft: #e8effc;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141416;
+        --surface: #1e1e21;
+        --text: #ececec;
+        --muted: #a0a0a6;
+        --border: #2e2e33;
+        --accent: #7aa7ff;
+        --accent-soft: #23304a;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 960px; margin: 0 auto; padding: 64px 16px; }
+    header { margin-bottom: 40px; }
+    h1 { font-size: 2rem; margin: 0 0 8px; letter-spacing: -0.02em; }
+    header p { color: var(--muted); margin: 0; max-width: 60ch; }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .card {
+      display: flex; flex-direction: column;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .tag {
+      align-self: flex-start;
+      font-size: 0.8rem; font-weight: 600;
+      color: var(--accent); background: var(--accent-soft);
+      border-radius: 999px; padding: 2px 10px; margin-bottom: 12px;
+    }
+    .card h2 { font-size: 1.2rem; margin: 0 0 8px; }
+    .card p { color: var(--muted); margin: 0 0 16px; flex: 1; }
+    .stack { font-size: 0.85rem; color: var(--muted); margin-bottom: 20px; }
+    .links { display: flex; flex-wrap: wrap; gap: 8px; }
+    .links a {
+      text-decoration: none; font-weight: 600; font-size: 0.95rem;
+      border-radius: 8px; padding: 8px 14px;
+      border: 1px solid var(--border); color: var(--text);
+    }
+    .links a.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    @media (prefers-color-scheme: dark) { .links a.primary { color: #10131a; } }
+    .links a:hover { filter: brightness(1.08); }
+    .links a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Backend IA</h1>
+      <p>Três projetos de backend com Python e IA. Escolha um para abrir.</p>
+    </header>
+
+    <div class="grid">
+      <section class="card">
+        <span class="tag">01</span>
+        <h2>Biblioteca Virtual</h2>
+        <p>API REST para cadastro e consulta de livros, com interface web para gerenciar o acervo.</p>
+        <div class="stack">FastAPI · SQLite · Dash</div>
+        <div class="links">
+          <a class="primary" data-sub="01" href="https://01.backend-ai-dot.oladata.com.br">Abrir app</a>
+          <a data-sub="api-01" data-path="/docs" href="https://api-01.backend-ai-dot.oladata.com.br/docs">Documentação da API</a>
+        </div>
+      </section>
+
+      <section class="card">
+        <span class="tag">02</span>
+        <h2>Python Tutor</h2>
+        <p>Chatbot que responde dúvidas de programação em Python, mantendo o contexto da conversa.</p>
+        <div class="stack">LangChain · OpenAI · Chainlit</div>
+        <div class="links">
+          <a class="primary" data-sub="02" href="https://02.backend-ai-dot.oladata.com.br">Abrir chat</a>
+        </div>
+      </section>
+
+      <section class="card">
+        <span class="tag">03</span>
+        <h2>Busca Semântica em Saúde</h2>
+        <p>Busca híbrida em artigos de saúde: embeddings, palavras-chave e re-ranking.</p>
+        <div class="stack">Transformers · FAISS · BM25 · Dash</div>
+        <div class="links">
+          <a class="primary" data-sub="03" href="https://03.backend-ai-dot.oladata.com.br">Abrir busca</a>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    // The hrefs above target the production domain; rewrite them to the host
+    // actually serving this page so the same file works on localhost too.
+    const base = location.host;
+    document.querySelectorAll("a[data-sub]").forEach((link) => {
+      link.href = `${location.protocol}//${link.dataset.sub}.${base}${link.dataset.path || ""}`;
+    });
+  </script>
+</body>
+</html>

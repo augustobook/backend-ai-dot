@@ -1,0 +1,1388 @@
+{
+  "info": {
+    "name": "Library API (Biblioteca Virtual)",
+    "description": "Every request of the Library API (FastAPI) used by the Biblioteca Virtual frontend.\n\n**Setup**\n1. Import this collection and `library-api.local.postman_environment.json`.\n2. Select the *Library API - local* environment.\n3. If the backend `.env` sets `API_KEY`, paste the same value into the environment's `apiKey`. Leave it empty when the API has no key.\n4. Run folder 2 before 4 and 5 (they need data and the saved `bookId`).\n\nAuthentication is configured once on the collection (API key in the `X-API-Key` header); requests that must not send it override it with *No Auth*.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "bookId",
+      "value": "1",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Health & docs",
+      "description": "Operational endpoints. `/health` is public (no API key) and never rate limited.",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Returns `{\"status\": \"ok\"}` when the API is up.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Body is ok\", () => pm.expect(pm.response.json()).to.eql({status: \"ok\"}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OpenAPI schema",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/openapi.json",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "openapi.json"
+              ]
+            },
+            "description": "Machine-readable API description. Returns 404 when `ENABLE_DOCS=false`.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Has /books\", () => pm.expect(pm.response.json().paths).to.have.property(\"/books\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Swagger UI",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/docs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "docs"
+              ]
+            },
+            "description": "Interactive documentation (HTML). Open it in a browser for the best view.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Register books (POST /books)",
+      "description": "Successful registrations. The first request stores the new id in the `bookId` collection variable, used by the 'Get by id' requests.",
+      "item": [
+        {
+          "name": "Create book (created_at omitted)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "`created_at` is omitted, so the API fills it with the current UTC date and time.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Dune\",\n  \"author\": \"Frank Herbert\",\n  \"publication_date\": \"1965-08-01\",\n  \"summary\": \"A noble family becomes embroiled in a war for control of the desert planet Arrakis.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "const book = pm.response.json();",
+                  "pm.collectionVariables.set(\"bookId\", book.id);",
+                  "pm.test(\"Returns an id\", () => pm.expect(book.id).to.be.a(\"number\"));",
+                  "pm.test(\"created_at is UTC\", () => pm.expect(book.created_at).to.match(/Z$/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create book (created_at with timezone)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "`created_at` sent in São Paulo time (-03:00) is stored and returned in UTC (`14:30:00Z`).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Harry Potter and the Philosopher's Stone\",\n  \"author\": \"J. K. Rowling\",\n  \"publication_date\": \"1997-06-26\",\n  \"summary\": \"A young wizard discovers his magical heritage.\",\n  \"created_at\": \"2024-05-10T11:30:00-03:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Converted to UTC\", () => pm.expect(pm.response.json().created_at).to.eql(\"2024-05-10T14:30:00Z\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create book (created_at without timezone)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "A `created_at` without timezone is treated as UTC.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Harry Potter and the Chamber of Secrets\",\n  \"author\": \"J. K. Rowling\",\n  \"publication_date\": \"1998-07-02\",\n  \"created_at\": \"2024-05-11T09:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Kept as UTC\", () => pm.expect(pm.response.json().created_at).to.eql(\"2024-05-11T09:00:00Z\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create book (minimal, no summary)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "Only the required fields; `summary` defaults to an empty string.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"The Hobbit\",\n  \"author\": \"J. R. R. Tolkien\",\n  \"publication_date\": \"1937-09-21\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Empty summary\", () => pm.expect(pm.response.json().summary).to.eql(\"\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Validation errors (422)",
+      "description": "Invalid payloads. Every one returns `422` with FastAPI's `{\"detail\": [{\"loc\", \"msg\", \"type\"}]}` format.",
+      "item": [
+        {
+          "name": "Missing required field (title)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "`title` is required.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"author\": \"Frank Herbert\",\n  \"publication_date\": \"1965-08-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"FastAPI error format\", () => pm.expect(pm.response.json().detail).to.be.an(\"array\"));",
+                  "pm.test(\"type = missing\", () => pm.expect(pm.response.json().detail[0].type).to.eql(\"missing\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Blank title",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "Whitespace-only text is stripped and rejected as empty.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"   \",\n  \"author\": \"Frank Herbert\",\n  \"publication_date\": \"1965-08-01\",\n  \"summary\": \"A noble family becomes embroiled in a war for control of the desert planet Arrakis.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"FastAPI error format\", () => pm.expect(pm.response.json().detail).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid publication_date format",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "Dates must be ISO `YYYY-MM-DD`; `26/06/1997` is rejected.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Dune\",\n  \"author\": \"Frank Herbert\",\n  \"publication_date\": \"26/06/1997\",\n  \"summary\": \"A noble family becomes embroiled in a war for control of the desert planet Arrakis.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"FastAPI error format\", () => pm.expect(pm.response.json().detail).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "publication_date in the future",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "The pre-request script sets `{{tomorrow}}` to tomorrow's date.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Dune\",\n  \"author\": \"Frank Herbert\",\n  \"publication_date\": \"{{tomorrow}}\",\n  \"summary\": \"A noble family becomes embroiled in a war for control of the desert planet Arrakis.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);",
+                  "pm.variables.set(\"tomorrow\", d.toISOString().slice(0, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"FastAPI error format\", () => pm.expect(pm.response.json().detail).to.be.an(\"array\"));",
+                  "pm.test(\"Mentions future\", () => pm.expect(pm.response.text()).to.include(\"future\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "created_at in the future",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "The pre-request script sets `{{inOneHour}}` to one hour from now (UTC).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Dune\",\n  \"author\": \"Frank Herbert\",\n  \"publication_date\": \"1965-08-01\",\n  \"summary\": \"A noble family becomes embroiled in a war for control of the desert planet Arrakis.\",\n  \"created_at\": \"{{inOneHour}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"inOneHour\", new Date(Date.now() + 60 * 60 * 1000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"FastAPI error format\", () => pm.expect(pm.response.json().detail).to.be.an(\"array\"));",
+                  "pm.test(\"Mentions future\", () => pm.expect(pm.response.text()).to.include(\"future\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown field (id)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "Unknown fields are rejected, so clients cannot set server-controlled values such as `id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": 999,\n  \"title\": \"Dune\",\n  \"author\": \"Frank Herbert\",\n  \"publication_date\": \"1965-08-01\",\n  \"summary\": \"A noble family becomes embroiled in a war for control of the desert planet Arrakis.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"FastAPI error format\", () => pm.expect(pm.response.json().detail).to.be.an(\"array\"));",
+                  "pm.test(\"type = extra_forbidden\", () => pm.expect(pm.response.json().detail[0].type).to.eql(\"extra_forbidden\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Summary too long (> 5000 chars)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "`summary` accepts up to 5000 characters. The pre-request script builds a 5001-character text.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Dune\",\n  \"author\": \"Frank Herbert\",\n  \"publication_date\": \"1965-08-01\",\n  \"summary\": \"{{longSummary}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"longSummary\", \"x\".repeat(5001));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"FastAPI error format\", () => pm.expect(pm.response.json().detail).to.be.an(\"array\"));",
+                  "pm.test(\"type = string_too_long\", () => pm.expect(pm.response.json().detail[0].type).to.eql(\"string_too_long\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Search books (GET /books)",
+      "description": "Partial, case-insensitive search by `title` and/or `author`, paginated with `skip` and `limit` (default 20, max `MAX_PAGE_SIZE` = 100). Run folder 2 first so there is data.",
+      "item": [
+        {
+          "name": "List all books",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "No filters: returns every book (first page), ordered by id."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns a list\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search by title (partial, case-insensitive)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books?title=harry",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ],
+              "query": [
+                {
+                  "key": "title",
+                  "value": "harry"
+                }
+              ]
+            },
+            "description": "`harry` matches *Harry Potter...*."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns a list\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));",
+                  "pm.test(\"All titles contain harry\", () => pm.response.json().forEach(b => pm.expect(b.title.toLowerCase()).to.include(\"harry\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search by author",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books?author=TOLKIEN",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ],
+              "query": [
+                {
+                  "key": "author",
+                  "value": "TOLKIEN"
+                }
+              ]
+            },
+            "description": "Case does not matter."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns a list\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));",
+                  "pm.test(\"All by Tolkien\", () => pm.response.json().forEach(b => pm.expect(b.author.toLowerCase()).to.include(\"tolkien\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search by title and author",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books?title=chamber&author=rowling",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ],
+              "query": [
+                {
+                  "key": "title",
+                  "value": "chamber"
+                },
+                {
+                  "key": "author",
+                  "value": "rowling"
+                }
+              ]
+            },
+            "description": "Both filters must match."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns a list\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pagination (skip & limit)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books?skip=1&limit=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ],
+              "query": [
+                {
+                  "key": "skip",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "2"
+                }
+              ]
+            },
+            "description": "Skips the first book and returns at most two."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns a list\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));",
+                  "pm.test(\"At most 2\", () => pm.expect(pm.response.json().length).to.be.at.most(2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search without results",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books?title=silmarillion-does-not-exist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ],
+              "query": [
+                {
+                  "key": "title",
+                  "value": "silmarillion-does-not-exist"
+                }
+              ]
+            },
+            "description": "No match returns `200` with an empty list."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns a list\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));",
+                  "pm.test(\"Empty\", () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wildcards are literal",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books?title=%25",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ],
+              "query": [
+                {
+                  "key": "title",
+                  "value": "%25"
+                }
+              ]
+            },
+            "description": "`%` (sent URL-encoded as `%25`) is matched literally, not as a SQL wildcard."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns a list\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid: limit above maximum",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books?limit=1000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "1000"
+                }
+              ]
+            },
+            "description": "`limit` above `MAX_PAGE_SIZE` returns 422."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid: negative skip",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books?skip=-1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ],
+              "query": [
+                {
+                  "key": "skip",
+                  "value": "-1"
+                }
+              ]
+            },
+            "description": "`skip` must be >= 0."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Get book by id (GET /books/{book_id})",
+      "description": "Uses the `bookId` variable saved by 'Create book (created_at omitted)'.",
+      "item": [
+        {
+          "name": "Get book by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{bookId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{bookId}}"
+              ]
+            },
+            "description": "Returns the book registered in folder 2."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Same id\", () => pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get(\"bookId\"))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Book not found (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "999999"
+              ]
+            },
+            "description": "Unknown ids return `404 {\"detail\": \"Book with id 999999 not found\"}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Message\", () => pm.expect(pm.response.json().detail).to.eql(\"Book with id 999999 not found\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid id: zero (422)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "0"
+              ]
+            },
+            "description": "Ids start at 1."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid id: not a number (422)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/abc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "abc"
+              ]
+            },
+            "description": "Ids must be integers."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Security",
+      "description": "Requests that exercise the security layer (see the Security section of the README). The API key tests only apply when the server sets `API_KEY`.",
+      "item": [
+        {
+          "name": "Missing API key (401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "No `X-API-Key` header. Returns 401 when the server has `API_KEY` set (200 otherwise).",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"401 when the API requires a key\", () => pm.expect(pm.response.code).to.be.oneOf([401, 200]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wrong API key (401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "An incorrect key. Returns 401 when the server has `API_KEY` set.",
+            "auth": {
+              "type": "apikey",
+              "apikey": [
+                {
+                  "key": "key",
+                  "value": "X-API-Key",
+                  "type": "string"
+                },
+                {
+                  "key": "value",
+                  "value": "wrong-key",
+                  "type": "string"
+                },
+                {
+                  "key": "in",
+                  "value": "header",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"401 when the API requires a key\", () => pm.expect(pm.response.code).to.be.oneOf([401, 200]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Body too large (413)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "Bodies above `MAX_REQUEST_BODY_BYTES` (64 KB by default) are rejected before parsing. The pre-request script builds a ~70 KB summary.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Dune\",\n  \"author\": \"Frank Herbert\",\n  \"publication_date\": \"1965-08-01\",\n  \"summary\": \"{{hugeSummary}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"hugeSummary\", \"x\".repeat(70000));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 413\", () => pm.response.to.have.status(413));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CORS preflight - allowed origin",
+          "request": {
+            "method": "OPTIONS",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "http://localhost:8050"
+              },
+              {
+                "key": "Access-Control-Request-Method",
+                "value": "POST"
+              },
+              {
+                "key": "Access-Control-Request-Headers",
+                "value": "Content-Type, X-API-Key"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "A browser preflight from an origin listed in `CORS_ORIGINS`.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Origin allowed\", () => pm.expect(pm.response.headers.get(\"Access-Control-Allow-Origin\")).to.eql(\"http://localhost:8050\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CORS - origin not allowed",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "http://evil.example"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "Origins outside `CORS_ORIGINS` get no `Access-Control-Allow-Origin` header, so browsers block the response."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"No CORS permission\", () => pm.expect(pm.response.headers.has(\"Access-Control-Allow-Origin\")).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Untrusted Host header (400)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Host",
+                "value": "evil.example"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Hosts outside `ALLOWED_HOSTS` get 400. The request overrides the `Host` header with `evil.example`; if your Postman version does not send custom `Host` values, the API answers 200 instead.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400 (if Postman sent the custom Host)\", () => pm.expect(pm.response.code).to.be.oneOf([400, 200]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Security & rate-limit headers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "Every response carries defensive headers; `/books` responses also show the remaining rate-limit budget. Run this request many times (e.g. Collection Runner, 301 iterations) to see `429 Too Many Requests` with `Retry-After`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"nosniff\", () => pm.expect(pm.response.headers.get(\"X-Content-Type-Options\")).to.eql(\"nosniff\"));",
+                  "pm.test(\"DENY framing\", () => pm.expect(pm.response.headers.get(\"X-Frame-Options\")).to.eql(\"DENY\"));",
+                  "pm.test(\"Rate-limit headers\", () => pm.expect(pm.response.headers.has(\"X-RateLimit-Remaining\")).to.be.true);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

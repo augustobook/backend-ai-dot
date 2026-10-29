@@ -1,0 +1,29 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets: never commit real API keys
+.env
+
+# Tooling caches and reports
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Web UI conversation database and generated auth secret
+data/
+
+# Chainlit runtime files (uploads, translations cache)
+.files/
+.chainlit/translations/*
+# Custom Brazilian Portuguese translation of the web interface
+!.chainlit/translations/pt-BR.json

@@ -1,0 +1,104 @@
+[project]
+name = "python-chatbot"
+version = "0.1.0"
+description = "A Python programming tutor chatbot built with LangChain, OpenAI, FastAPI and Chainlit."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "chainlit>=2.12.0",
+    "fastapi>=0.162.0",
+    "langchain-core>=1.7.1,<2",
+    "langchain-openai>=1.7.3",
+    "pydantic-settings>=2.16.2",
+    "rich>=15.0.0",
+    "sqlalchemy[asyncio]>=2.1.6",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.3",
+]
+
+# Building the project as a package makes `app` importable from anywhere
+# (scripts/, Chainlit, uvicorn) without touching sys.path.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".chainlit", ".files"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific rules
+    "T20", # flake8-print (logs must go through `logging`)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The generator script reports progress to the terminal on purpose.
+"scripts/*" = ["T20"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["app", "scripts", "tests"]
+
+[[tool.mypy.overrides]]
+# Chainlit ships without complete type information for its decorators.
+module = ["chainlit", "chainlit.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Chainlit's decorators and session/message methods are not fully annotated.
+module = ["app.ui.chainlit_app"]
+disallow_untyped_decorators = false
+disallow_untyped_calls = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra"
+# langchain-core 1.6+ marks the history classes required by this project as
+# deprecated in favor of LangGraph (see "Known trade-offs" in the README).
+filterwarnings = [
+    "ignore:RunnableWithMessageHistory is deprecated:DeprecationWarning",
+    "ignore:The class `InMemoryChatMessageHistory` was deprecated:DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+# The Chainlit handlers need a live Chainlit server/session to run; their logic
+# lives in `app/ui/helpers.py` and `ChatService`, which are fully tested.
+omit = ["app/ui/chainlit_app.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 90
+exclude_also = [
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
