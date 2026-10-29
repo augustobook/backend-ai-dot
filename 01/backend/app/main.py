@@ -18,11 +18,12 @@ from app.api.middleware import (
     SecurityHeadersMiddleware,
 )
 from app.api.routes import books, health
+from app.api.routes.books import TOTAL_COUNT_HEADER
 from app.core.config import Settings, get_settings
 from app.core.exceptions import BookNotFoundError
 from app.core.logging import configure_logging
-from app.db.session import engine as default_engine
-from app.db.session import init_db
+from app.db.migrate import migrate_db
+from app.db.session import create_db_engine, create_session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,8 @@ def configure_security(app: FastAPI, settings: Settings) -> None:
         # The API uses no cookies, so only its own methods and headers are allowed.
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Content-Type", API_KEY_HEADER],
+        # Browsers hide non-standard response headers from scripts unless exposed.
+        expose_headers=[TOTAL_COUNT_HEADER],
         allow_credentials=False,
         max_age=600,
     )
@@ -137,19 +140,20 @@ def create_app(settings: Settings | None = None, db_engine: Engine | None = None
 
     Args:
         settings: Settings to use. Defaults to the cached environment settings.
-        db_engine: Engine where tables are created on startup. Defaults to the
-            engine built from the environment settings.
+        db_engine: Engine to use. Defaults to a new engine built from `settings`,
+            which the app disposes of on shutdown.
 
     Returns:
         The configured application.
     """
     settings = settings or get_settings()
-    bind = db_engine or default_engine
+    owns_engine = db_engine is None
+    bind = db_engine or create_db_engine(settings)
     configure_logging(settings.log_level)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        """Create the database tables before the application starts serving.
+        """Apply pending migrations before the application starts serving.
 
         Args:
             app: The application being started.
@@ -157,10 +161,13 @@ def create_app(settings: Settings | None = None, db_engine: Engine | None = None
         Yields:
             Control to the running application.
         """
-        init_db(bind)
+        migrate_db(bind)
         if settings.api_key is None:
             logger.warning("API_KEY is not set: /books endpoints accept unauthenticated requests")
         yield
+        # An engine received from outside belongs to the caller (e.g. the tests).
+        if owns_engine:
+            bind.dispose()
 
     # Docs can be switched off in production to avoid publishing the API surface.
     docs_enabled = settings.enable_docs
@@ -174,12 +181,13 @@ def create_app(settings: Settings | None = None, db_engine: Engine | None = None
         redoc_url="/redoc" if docs_enabled else None,
         openapi_url="/openapi.json" if docs_enabled else None,
     )
-    # Request-time dependencies (such as the API key check) read settings from here.
+    # Request-time dependencies (the API key check and `get_db`) read from here.
     app.state.settings = settings
+    app.state.session_factory = create_session_factory(bind)
 
     configure_security(app, settings)
     app.include_router(health.router)
-    app.include_router(books.router, dependencies=[Depends(require_api_key)])
+    app.include_router(books.build_router(settings), dependencies=[Depends(require_api_key)])
     app.add_exception_handler(BookNotFoundError, book_not_found_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)
     return app

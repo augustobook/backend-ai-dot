@@ -4,13 +4,14 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI, Request
 from pydantic import ValidationError
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import QueuePool
 
 from app.core.config import Settings, get_settings
-from app.db.session import create_db_engine, get_db
+from app.db.session import create_db_engine, create_session_factory, get_db
 from app.db.types import UTCDateTime
 from app.schemas.book import BookCreate
 from tests.factories import make_book
@@ -123,12 +124,16 @@ def test_settings_parse_comma_separated_lists_and_blank_api_key(
     assert settings.api_key is None
 
 
-def test_get_db_yields_session_and_closes_it() -> None:
-    """`get_db` yields a session and finishes cleanly when the request ends.
+def test_get_db_yields_session_from_the_app_and_closes_it() -> None:
+    """`get_db` uses the session factory stored in the app and finishes cleanly.
 
-    No query is run, so the real database is never opened.
+    No query is run, so the database is never opened.
     """
-    generator = get_db()
+    app = FastAPI()
+    app.state.session_factory = create_session_factory(
+        create_db_engine(Settings(_env_file=None, database_url="sqlite://"))
+    )
+    generator = get_db(Request({"type": "http", "app": app}))
 
     session = next(generator)
 

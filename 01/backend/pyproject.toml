@@ -5,6 +5,7 @@ description = "REST API for a virtual library where users can register and searc
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.20.1",
     "fastapi>=0.162.0",
     "pydantic-settings>=2.16.2",
     "sqlalchemy>=2.1.6",
@@ -54,6 +55,13 @@ plugins = ["pydantic.mypy"]
 init_forbid_extra = true
 init_typed = true
 warn_required_dynamic_aliases = true
+
+# Used by the `alembic` command line (e.g. `uv run alembic revision --autogenerate -m "..."`).
+# The application runs the migrations itself on startup (`app.db.migrate`).
+[tool.alembic]
+script_location = "%(here)s/app/db/migrations"
+prepend_sys_path = ["."]
+file_template = "%%(rev)s_%%(slug)s"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

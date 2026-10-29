@@ -14,14 +14,15 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings
-from app.db.session import create_session_factory, get_db, init_db
+from app.db.migrate import migrate_db
+from app.db.session import create_session_factory
 from app.main import create_app
 from tests.factories import make_book_payload
 
 
 @pytest.fixture
 def engine() -> Iterator[Engine]:
-    """Provide an engine for a fresh in-memory SQLite database with all tables.
+    """Provide an engine for a fresh in-memory SQLite database, fully migrated.
 
     `StaticPool` keeps a single connection, so every session (and the
     TestClient's worker thread) sees the same in-memory database.
@@ -32,7 +33,7 @@ def engine() -> Iterator[Engine]:
     test_engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
-    init_db(test_engine)
+    migrate_db(test_engine)
     yield test_engine
     test_engine.dispose()
 
@@ -89,19 +90,10 @@ def make_client(engine: Engine) -> Iterator[AppFactory]:
         A function accepting settings overrides (plus `raise_server_exceptions`)
         and returning a started TestClient.
     """
-    session_factory = create_session_factory(engine)
     clients: list[TestClient] = []
-
-    def override_get_db() -> Iterator[Session]:
-        session = session_factory()
-        try:
-            yield session
-        finally:
-            session.close()
 
     def factory(raise_server_exceptions: bool = True, **overrides: Any) -> TestClient:
         app = create_app(settings=make_settings(**overrides), db_engine=engine)
-        app.dependency_overrides[get_db] = override_get_db
         test_client = TestClient(app, raise_server_exceptions=raise_server_exceptions)
         test_client.__enter__()
         clients.append(test_client)

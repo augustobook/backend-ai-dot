@@ -3,16 +3,20 @@
 Connection limits (pool size, overflow, wait timeout, recycling) come from
 `Settings`, so the number of simultaneous database connections is bounded and
 a burst of requests waits briefly instead of exhausting the database.
+
+Nothing is created at import time: `create_app` builds the engine from the
+settings it receives and stores the session factory in `app.state`, so an app
+built with other settings (as the tests do) never touches the default database.
 """
 
 from collections.abc import Iterator
 from typing import Any
 
+from fastapi import Request
 from sqlalchemy import URL, Engine, create_engine, event, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import Settings, get_settings
-from app.db.base import Base
+from app.core.config import Settings
 
 
 def _is_in_memory_sqlite(url: URL) -> bool:
@@ -95,32 +99,18 @@ def create_session_factory(bind: Engine) -> sessionmaker[Session]:
     return sessionmaker(bind=bind, autoflush=False, expire_on_commit=False)
 
 
-engine = create_db_engine(get_settings())
-SessionLocal = create_session_factory(engine)
-
-
-def init_db(bind: Engine) -> None:
-    """Create all tables that do not exist yet.
-
-    Args:
-        bind: The engine where the tables will be created.
-    """
-    # Importing the models registers them in Base.metadata.
-    import app.models  # noqa: F401
-
-    Base.metadata.create_all(bind=bind)
-
-
-def get_db() -> Iterator[Session]:
+def get_db(request: Request) -> Iterator[Session]:
     """Provide a database session for the duration of a request.
 
-    Tests override this dependency through `app.dependency_overrides`.
+    Args:
+        request: The current request; its app holds the session factory.
 
     Yields:
         An open `Session` that is closed (returning its connection to the pool)
         when the request finishes.
     """
-    session = SessionLocal()
+    session_factory: sessionmaker[Session] = request.app.state.session_factory
+    session = session_factory()
     try:
         yield session
     finally:

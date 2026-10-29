@@ -174,3 +174,17 @@ class BookService:
             skip=skip,
             limit=limit,
         )
+
+    def count_books(self, *, title: str | None = None, author: str | None = None) -> int:
+        """Count the books matching the same filters as `search_books`.
+
+        Lets clients know how many pages exist without fetching them all.
+
+        Args:
+            title: Text that must be contained in the title.
+            author: Text that must be contained in the author.
+
+        Returns:
+            The number of matching books, ignoring pagination.
+        """
+        return self._repository.count(title=_normalize_term(title), author=_normalize_term(author))

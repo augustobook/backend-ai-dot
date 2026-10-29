@@ -14,6 +14,7 @@ paginação.
 | Validação e schemas     | Pydantic v2                                                  |
 | Configuração            | pydantic-settings (`.env` / variáveis de ambiente)           |
 | Banco de dados          | SQLite via SQLAlchemy 2.0 (`Mapped` / `mapped_column`)       |
+| Migrations              | Alembic (aplicadas na inicialização)                         |
 | Gerenciador de pacotes  | [uv](https://docs.astral.sh/uv/)                             |
 | Testes                  | pytest, pytest-cov, `TestClient` do FastAPI (httpx2)         |
 | Qualidade               | ruff (lint + format), mypy (modo strict)                     |
@@ -49,16 +50,20 @@ O código é organizado em camadas, e cada camada conhece apenas a camada logo a
 Peças de apoio:
 
 - **Injeção de dependência:** a cadeia `get_db` → `get_book_repository` → `get_book_service`
-  fica em `app/api/dependencies.py`. Os testes substituem o `get_db` via
-  `app.dependency_overrides`.
+  fica em `app/api/dependencies.py`. O `get_db` abre a sessão pela fábrica guardada em
+  `app.state`, então os testes só passam outra engine para `create_app`.
 - **Exceções de domínio:** ficam em `app/core/exceptions.py`. Um handler registrado em
   `app/main.py` converte `BookNotFoundError` em `404 {"detail": "Book with id 42 not found"}`.
 - **Configuração:** a classe `Settings` em `app/core/config.py`.
 - **Logging:** `app/core/logging.py`, com o módulo `logging` padrão. Registra livro criado e
   livro não encontrado.
-- **Factory da aplicação:** `create_app()` em `app/main.py` monta a app (settings, lifespan,
-  middleware de segurança, routers e handlers). As tabelas são criadas na inicialização, via
-  `lifespan`.
+- **Factory da aplicação:** `create_app(settings, db_engine)` em `app/main.py` monta a app
+  (engine, lifespan, middleware de segurança, routers e handlers). Nada é criado na importação:
+  a engine, a fábrica de sessões e o router de `/books` saem das settings recebidas. Assim, uma
+  app criada com outras settings (como nos testes) segue os próprios limites de paginação e
+  nunca abre o banco padrão.
+- **Migrations:** o schema é definido pelas migrations do Alembic em `app/db/migrations/`, e o
+  `lifespan` aplica as pendentes na inicialização. Veja [Migrations](#migrations).
 - **Camada de segurança:** `app/api/middleware.py` (limite de tamanho do corpo, rate limit e
   headers de segurança) e `require_api_key` em `app/api/dependencies.py`, ligados por
   `configure_security()` em `app/main.py`. Veja [Segurança](#segurança).
@@ -86,7 +91,9 @@ backend/
 │   │   └── logging.py             # Configuração de logging
 │   ├── db/
 │   │   ├── base.py                # DeclarativeBase
-│   │   ├── session.py             # Engine, SessionLocal, get_db, init_db
+│   │   ├── session.py             # create_db_engine, create_session_factory, get_db
+│   │   ├── migrate.py             # migrate_db: aplica as migrations do Alembic
+│   │   ├── migrations/            # env.py do Alembic + versions/ (0001_create_books)
 │   │   └── types.py               # Tipo de coluna UTCDateTime
 │   ├── models/book.py             # Modelo ORM Book
 │   ├── schemas/
@@ -106,7 +113,7 @@ backend/
 │   ├── conftest.py                # Banco SQLite em memória isolado por teste, TestClient
 │   ├── factories.py               # make_book_payload(...), make_book(...)
 │   ├── unit/                      # BookService com repositório falso, infraestrutura
-│   ├── integration/               # BookRepository contra SQLite em memória
+│   ├── integration/               # BookRepository contra SQLite em memória, migrations
 │   └── api/                       # Endpoints de ponta a ponta e camada de segurança
 ├── postman/                       # Collection do Postman + environment local (veja abaixo)
 ├── .env.example                   # Todas as configurações com seus padrões
@@ -276,8 +283,36 @@ uv run ruff format .         # formatação
 uv run mypy app              # checagem de tipos
 ```
 
-Os testes usam um SQLite em memória novo a cada teste e nunca tocam no `library.db`. O mínimo
-de 90% de cobertura é exigido pelo `pyproject.toml`.
+Os testes usam um SQLite em memória novo a cada teste, criado pelas próprias migrations, e
+nunca tocam no `library.db`. O mínimo de 90% de cobertura é exigido pelo `pyproject.toml`.
+
+## Migrations
+
+O schema do banco é versionado com [Alembic](https://alembic.sqlalchemy.org/). As migrations
+ficam em `app/db/migrations/versions/` e a API aplica as pendentes sozinha ao iniciar
+(`migrate_db`, chamado no `lifespan`), então subir uma versão nova já atualiza o banco.
+
+**Por que não `create_all`:** o `Base.metadata.create_all` só cria tabelas que não existem e
+nunca altera uma existente. Uma coluna ou índice novo nunca chegaria a um banco que já tem
+livros. Com migrations, cada mudança de schema vira um passo versionado e reversível.
+
+**Bancos antigos:** um `library.db` criado antes do Alembic já tem a tabela `books`, mas não a
+tabela `alembic_version`. Nesse caso, o `migrate_db` marca o banco como estando na migration
+inicial (`0001`) antes de aplicar as seguintes, então os livros cadastrados são mantidos.
+
+Para mudar o schema:
+
+```bash
+# 1. altere o modelo em app/models/ e gere a migration comparando modelo x banco
+uv run alembic revision --autogenerate -m "add isbn to books"
+# 2. revise o arquivo gerado em app/db/migrations/versions/ e aplique
+uv run alembic upgrade head
+# conferir se modelos e migrations estão em sincronia
+uv run alembic check
+```
+
+O teste `tests/integration/test_migrations.py` falha se um modelo mudar sem a migration
+correspondente.
 
 ## Adicionando dependências
 
@@ -331,6 +366,17 @@ npx newman run postman/library-api.postman_collection.json \
 
 Todo endpoint de `/books` também pode retornar `401` (com `API_KEY` definida) e `429` (rate
 limit). Com chave configurada, adicione `-H "X-API-Key: <valor>"` aos exemplos de `curl` abaixo.
+
+### Paginação
+
+`GET /books` devolve uma página (`skip` e `limit`, ordenada por `id`) e informa no header
+**`X-Total-Count`** quantos livros atendem aos filtros no total, ignorando a paginação. Com isso
+o cliente sabe quantas páginas existem sem precisar buscar todas.
+
+O total vai num header, e não num envelope como `{"items": [...], "total": 42}`, para que o
+corpo continue sendo uma lista de livros: os clientes existentes (o frontend e a collection do
+Postman) seguem funcionando sem mudança. O header é exposto via CORS
+(`Access-Control-Expose-Headers`), então scripts no navegador também conseguem lê-lo.
 
 ### Campos do livro
 
@@ -387,7 +433,8 @@ curl "http://127.0.0.1:8000/books?title=dun"
 **Buscar por título e autor, com paginação**
 
 ```bash
-curl "http://127.0.0.1:8000/books?title=dune&author=herbert&skip=0&limit=10"
+curl -i "http://127.0.0.1:8000/books?title=dune&author=herbert&skip=0&limit=10"
+# x-total-count: 1   <- total de livros com esses filtros, em todas as páginas
 ```
 
 **Buscar por ID**

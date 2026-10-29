@@ -7,7 +7,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.config import get_settings
+from app.core.config import Settings
+from tests.conftest import AppFactory
 from tests.factories import make_book_payload
 
 CreateBook = Callable[..., dict[str, Any]]
@@ -226,7 +227,7 @@ def test_list_paginates_with_skip_and_limit(
     [
         {"skip": -1},
         {"limit": 0},
-        {"limit": get_settings().max_page_size + 1},
+        {"limit": Settings.model_fields["max_page_size"].default + 1},
     ],
 )
 def test_list_invalid_pagination_returns_422(client: TestClient, params: dict[str, int]) -> None:
@@ -234,6 +235,38 @@ def test_list_invalid_pagination_returns_422(client: TestClient, params: dict[st
     response = client.get("/books", params=params)
 
     assert response.status_code == 422
+
+
+def test_list_sends_total_of_matching_books_in_header(
+    client: TestClient, library: list[dict[str, Any]]
+) -> None:
+    """`X-Total-Count` counts every match, not just the books in the page."""
+    everything = client.get("/books", params={"limit": 1})
+    filtered = client.get("/books", params={"author": "rowling", "limit": 1})
+    nothing = client.get("/books", params={"title": "no such book"})
+
+    assert everything.headers["X-Total-Count"] == str(len(library))
+    assert len(everything.json()) == 1
+    assert filtered.headers["X-Total-Count"] == "3"
+    assert nothing.headers["X-Total-Count"] == "0"
+
+
+def test_total_header_is_exposed_to_browsers(client: TestClient) -> None:
+    """CORS exposes `X-Total-Count`, so frontend scripts on other origins can read it."""
+    response = client.get("/books", headers={"Origin": "http://localhost:8050"})
+
+    assert "x-total-count" in response.headers["access-control-expose-headers"].lower()
+
+
+def test_page_size_limits_follow_the_app_settings(make_client: AppFactory) -> None:
+    """The maximum and default `limit` come from the settings given to `create_app`."""
+    client = make_client(max_page_size=3, default_page_size=2)
+    for index in range(4):
+        client.post("/books", json=make_book_payload(title=f"Book {index}"))
+
+    assert client.get("/books", params={"limit": 4}).status_code == 422
+    assert len(client.get("/books", params={"limit": 3}).json()) == 3
+    assert len(client.get("/books").json()) == 2
 
 
 # --- Get by id ------------------------------------------------------------

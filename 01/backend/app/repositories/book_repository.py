@@ -3,6 +3,9 @@
 `BookRepositoryProtocol` is the abstraction the service layer depends on;
 `BookRepository` is its SQLAlchemy implementation.
 
+`search` returns one page and `count` the total for the same filters; the API
+sends the total in the `X-Total-Count` header.
+
 Why a protocol: the service only needs "add, get, update, delete, search", not
 SQLAlchemy. Depending on the protocol keeps the business rules free of database
 details and lets the unit tests run the service against an in-memory fake.
@@ -12,9 +15,9 @@ use case performs a single write, so one operation = one transaction. Committing
 here keeps transaction handling out of the service.
 """
 
-from typing import Protocol
+from typing import Any, Protocol
 
-from sqlalchemy import select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from app.models.book import Book
@@ -103,6 +106,44 @@ class BookRepositoryProtocol(Protocol):
         """
         ...
 
+    def count(self, *, title: str | None, author: str | None) -> int:
+        """Count the books matching the same filters as `search`.
+
+        Args:
+            title: Text that must be contained in the title, or `None` to ignore it.
+            author: Text that must be contained in the author, or `None` to ignore it.
+
+        Returns:
+            The number of matching books, ignoring pagination.
+        """
+        ...
+
+
+def _apply_filters[S: Select[Any]](statement: S, *, title: str | None, author: str | None) -> S:
+    """Add the optional title and author conditions to a query.
+
+    Shared by `search` and `count`, so the total always matches the listing.
+
+    Args:
+        statement: The query to filter.
+        title: Text that must be contained in the title, or `None` to ignore it.
+        author: Text that must be contained in the author, or `None` to ignore it.
+
+    Returns:
+        The filtered query.
+    """
+    # Filters are optional, so the query is built step by step; each `where`
+    # adds an AND condition. `ilike` makes the match case-insensitive.
+    if title:
+        statement = statement.where(
+            Book.title.ilike(_contains_pattern(title), escape=LIKE_ESCAPE_CHAR)
+        )
+    if author:
+        statement = statement.where(
+            Book.author.ilike(_contains_pattern(author), escape=LIKE_ESCAPE_CHAR)
+        )
+    return statement
+
 
 class BookRepository:
     """SQLAlchemy implementation of `BookRepositoryProtocol`."""
@@ -178,18 +219,23 @@ class BookRepository:
         Returns:
             The matching books ordered by id.
         """
-        # Filters are optional, so the query is built step by step; each `where`
-        # adds an AND condition. `ilike` makes the match case-insensitive.
-        statement = select(Book)
-        if title:
-            statement = statement.where(
-                Book.title.ilike(_contains_pattern(title), escape=LIKE_ESCAPE_CHAR)
-            )
-        if author:
-            statement = statement.where(
-                Book.author.ilike(_contains_pattern(author), escape=LIKE_ESCAPE_CHAR)
-            )
+        statement = _apply_filters(select(Book), title=title, author=author)
         # Offset pagination needs a stable order: without ORDER BY the database may
         # return rows in any order, and pages could repeat or skip books.
         statement = statement.order_by(Book.id).offset(skip).limit(limit)
         return list(self._session.scalars(statement))
+
+    def count(self, *, title: str | None, author: str | None) -> int:
+        """Count the books matching the filters, ignoring pagination.
+
+        Args:
+            title: Text that must be contained in the title, or `None` to ignore it.
+            author: Text that must be contained in the author, or `None` to ignore it.
+
+        Returns:
+            The number of matching books.
+        """
+        statement = _apply_filters(
+            select(func.count()).select_from(Book), title=title, author=author
+        )
+        return self._session.scalar(statement) or 0

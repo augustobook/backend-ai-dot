@@ -43,16 +43,24 @@ class InMemoryBookRepository:
         """Remove the book from the store."""
         del self.books[book.id]
 
-    def search(self, *, title: str | None, author: str | None, skip: int, limit: int) -> list[Book]:
-        """Filter stored books by case-insensitive containment."""
-        self.last_search = {"title": title, "author": author, "skip": skip, "limit": limit}
-        matches = [
+    def _matches(self, title: str | None, author: str | None) -> list[Book]:
+        """Return the stored books matching the filters, by case-insensitive containment."""
+        return [
             book
             for book in self.books.values()
             if (title is None or title.casefold() in book.title.casefold())
             and (author is None or author.casefold() in book.author.casefold())
         ]
-        return matches[skip : skip + limit]
+
+    def search(self, *, title: str | None, author: str | None, skip: int, limit: int) -> list[Book]:
+        """Return one page of the matching books."""
+        self.last_search = {"title": title, "author": author, "skip": skip, "limit": limit}
+        return self._matches(title, author)[skip : skip + limit]
+
+    def count(self, *, title: str | None, author: str | None) -> int:
+        """Count the matching books."""
+        self.last_search = {"title": title, "author": author}
+        return len(self._matches(title, author))
 
 
 @pytest.fixture
