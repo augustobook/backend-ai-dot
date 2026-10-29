@@ -32,7 +32,7 @@ A documentação abre sem chave, mas os endpoints `/books` exigem o cabeçalho
 `X-API-Key`. Chave da demonstração:
 
 ```
-LHcP3HLI63DmhMKpvQ7cq7mQ07V79Shy
+TiqGqSQ8HETtY92eH3AXwY_UAILquYHQoTC1sMGbjcg
 ```
 
 Em <https://api-01.backend-ai-dot.oladata.com.br/docs>, clique em **Authorize**, cole a
