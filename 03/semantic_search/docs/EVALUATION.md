@@ -117,6 +117,32 @@ candidatos. A pergunta aqui é se a fusão ainda compensa quando o BM25 sozinho 
 - Duas perguntas ficam fora do top 5 em todas as configurações: "ardência ao fazer xixi"
   (infecção urinária) e "pegar no sono de dia sem conseguir evitar" (narcolepsia).
 
+### Com a reescrita da pergunta
+
+Todas as tabelas acima têm a reescrita **desligada**, para isolar cada etapa. Em produção
+ela fica ligada quando há `OPENAI_API_KEY`: o `gpt-5-nano` reescreve a pergunta antes da
+busca. Medida com a fusão 1:1 (o padrão no momento da medição), mesmo índice, cross-encoder
+com 20 candidatos:
+
+| Configuração | hit@1 | hit@5 | MRR@10 | Respostas exibidas |
+|---|---|---|---|---|
+| Híbrida 1:1 + cross-encoder | 0,77 | 0,93 | 0,847 | 96% |
+| **Híbrida 1:1 + reescrita + cross-encoder** | **0,83** | **0,95** | **0,891** | 86% |
+
+- **A reescrita é um ganho:** 4 perguntas a mais em 1º lugar (acima do limite de 3) e MRR
+  0,847 → 0,891. Ela recupera justamente as descrições que a busca sem LLM perdia: "rosto
+  torto e fala enrolada de repente" (AVC), "ardência ao fazer xixi" (infecção urinária) e
+  "mania de conferir a porta e lavar as mãos várias vezes" (TOC) passaram a entrar no top
+  5. "Pegar no sono de dia sem conseguir evitar" (narcolepsia) subiu, mas ficou em 6º.
+- **Mas não só ganha:** duas perguntas que estavam no top 5 saíram: "sal faz mal para o
+  coração?" (7º) e "andar dormindo" (8º). Uma reescrita pode afastar a pergunta das
+  palavras que já casavam; por isso o hit@5 sobe só 1 pergunta (3 entram, 2 saem).
+- **Efeito colateral no limite de relevância:** com a reescrita, só 86% dos 1º lugares
+  certos foram marcados como relevantes (antes, 96%). O limite de 0,05 foi calibrado sem a
+  reescrita; recalibrá-lo com ela ligada é o próximo passo.
+- **Latência não registrada:** a medição dividiu a CPU com outros processos pesados, então
+  os tempos não são comparáveis com as tabelas acima.
+
 ### Texto juntado × independente
 
 O bloco escrito pela LLM ("Contexto: … Termos semelhantes: … Perguntas: …") era
@@ -172,6 +198,7 @@ Com 0,3, um terço das respostas certas aparecia como "baixa relevância". Era o
 | Stemming no BM25 | hit@5 cai 0,85 → 0,77 (BM25) e 0,90 → 0,83 (híbrida) | **Removido** |
 | Cross-encoder quantizado (int8) | sem ganho de velocidade nem de memória, e as notas mudaram até 0,09 | **Não implementado** |
 | `multilingual-e5-base` no lugar do e5-small | ~10× mais lento por pergunta, 1,9 GB, e não resolveu o vocabulário popular | **Descartado** |
+| Reescrita da pergunta pela LLM | hit@1 0,77 → 0,83 e MRR 0,847 → 0,891 (com cross-encoder); 3 perguntas entram no top 5 e 2 saem; respostas exibidas 96% → 86% | **Mantida** (limite de relevância a recalibrar com ela) |
 | Cross-encoder lendo o bloco da LLM | hit@1 0,78 → 0,73 e MRR 0,849 → 0,806 | **Passou a ler só o trecho original** |
 | Vetor do trecho com o bloco da LLM | empate com o trecho original | **Só o trecho original** (separação mais limpa; as perguntas já têm vetor próprio) |
 | Limite de relevância 0,3 | exibia só 64% das respostas certas | **Passou para 0,05** (96% exibidas, 100% fora do acervo bloqueadas) |
