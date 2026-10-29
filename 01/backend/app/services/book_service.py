@@ -1,4 +1,9 @@
-"""Use cases for registering, searching, editing and deleting books."""
+"""Use cases for registering, searching, editing and deleting books.
+
+The service holds the business rules and knows nothing about HTTP or SQL: it
+receives already validated schemas, talks to a `BookRepositoryProtocol` and
+signals "not found" with a domain exception that the API turns into a 404.
+"""
 
 import logging
 from collections.abc import Callable
@@ -15,6 +20,9 @@ logger = logging.getLogger(__name__)
 def utc_now() -> datetime:
     """Return the current date and time in UTC.
 
+    Timestamps are always UTC so they do not depend on the server's timezone;
+    clients convert them to local time for display.
+
     Returns:
         A timezone-aware UTC datetime.
     """
@@ -23,6 +31,10 @@ def utc_now() -> datetime:
 
 def _normalize_term(term: str | None) -> str | None:
     """Strip a search term, treating blank terms as no filter.
+
+    Forms often send an empty field as `?title=` or `?title=%20`. Without this,
+    `"  "` would become the pattern `%  %` and only match titles containing two
+    spaces, instead of meaning "no title filter".
 
     Args:
         term: The raw search term.
@@ -67,6 +79,8 @@ class BookService:
             author=data.author,
             publication_date=data.publication_date,
             summary=data.summary,
+            # Decided here (not by the column default) so tests can fix the time
+            # through the injected clock.
             created_at=data.created_at or self._clock(),
         )
         saved = self._repository.add(book)
@@ -107,6 +121,10 @@ class BookService:
             BookNotFoundError: If no book has the given id.
         """
         book = self.get_book(book_id)
+        # `exclude_unset` keeps only the fields the client actually sent. Every
+        # field of `BookUpdate` defaults to None, so a plain dump would overwrite
+        # the omitted ones with None. Copying fields by name is safe because the
+        # schema forbids unknown fields: `id` can never get here.
         changes = data.model_dump(exclude_unset=True)
         for field, value in changes.items():
             setattr(book, field, value)
@@ -123,6 +141,8 @@ class BookService:
         Raises:
             BookNotFoundError: If no book has the given id.
         """
+        # Load first so a missing id raises 404 instead of silently "deleting"
+        # nothing, and so the title is available for the log.
         book = self.get_book(book_id)
         self._repository.delete(book)
         logger.info("Book deleted: id=%s title=%r", book_id, book.title)

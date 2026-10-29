@@ -15,6 +15,8 @@ class UTCDateTime(TypeDecorator[datetime]):
     """
 
     impl = DateTime(timezone=True)
+    # The type has no per-instance state that changes the SQL, so SQLAlchemy may
+    # cache the statements that use it.
     cache_ok = True
 
     def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:

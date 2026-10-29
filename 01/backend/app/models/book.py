@@ -28,6 +28,8 @@ class Book(Base):
     author: Mapped[str] = mapped_column(String(255))
     publication_date: Mapped[date] = mapped_column(Date)
     summary: Mapped[str] = mapped_column(Text, default="")
+    # The service always sets `created_at`; this default covers rows inserted
+    # without it. A lambda so the time is taken at insert, not at import.
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=lambda: datetime.now(UTC))
 
     def __repr__(self) -> str:

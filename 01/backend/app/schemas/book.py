@@ -1,13 +1,20 @@
-"""Pydantic schemas for creating, updating and reading books."""
+"""Pydantic schemas for creating, updating and reading books.
+
+All input rules live here, so an invalid payload is rejected with 422 before it
+reaches the service or the database.
+"""
 
 from datetime import UTC, date, datetime
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
+# Same size as the `String(255)` columns: a longer value gets a clear 422 here
+# instead of a database error or a silently truncated value.
 MAX_TEXT_LENGTH = 255
 MAX_SUMMARY_LENGTH = 5000
 
+# Whitespace is stripped before `min_length` is checked, so "   " is rejected.
 NonEmptyStr = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_TEXT_LENGTH)
 ]
@@ -42,6 +49,9 @@ def _check_created_at(value: datetime) -> datetime:
     Raises:
         ValueError: If the datetime is in the future.
     """
+    # A naive datetime has no timezone, so it cannot be compared with an aware
+    # one; it is read as UTC, the timezone the API uses everywhere. Aware values
+    # are converted, so "11:30-03:00" is stored as "14:30Z".
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     value = value.astimezone(UTC)
@@ -114,6 +124,10 @@ class BookUpdate(BaseModel):
     Only the fields sent are changed; omitted fields keep their stored value.
     `null` is rejected for every field, since none of them can be empty, and
     unknown fields (such as `id`) are rejected with 422.
+
+    It does not inherit `BookBase` because every field here must be optional.
+    The `None` defaults only mean "not sent"; the service applies just the sent
+    fields (`exclude_unset`).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -153,6 +167,12 @@ class BookUpdate(BaseModel):
     def reject_null(cls, value: object) -> object:
         """Reject explicit `null`: omit a field to keep it unchanged.
 
+        The field types accept None (to make them optional), so an explicit
+        `null` would pass validation, be applied as a change and fail on the
+        NOT NULL column with a 500. `mode="before"` sees the raw value, and
+        Pydantic only runs it for fields that were sent, so omitted fields are
+        not affected.
+
         Args:
             value: The raw value sent by the client.
 
@@ -182,6 +202,7 @@ class BookUpdate(BaseModel):
 class BookRead(BookBase):
     """Representation of a stored book returned by the API."""
 
+    # Lets `model_validate` read the attributes of an ORM `Book` directly.
     model_config = ConfigDict(from_attributes=True)
 
     id: int = Field(..., description="Unique identifier of the book.", examples=[1])

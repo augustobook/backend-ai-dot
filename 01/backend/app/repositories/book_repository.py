@@ -2,6 +2,14 @@
 
 `BookRepositoryProtocol` is the abstraction the service layer depends on;
 `BookRepository` is its SQLAlchemy implementation.
+
+Why a protocol: the service only needs "add, get, update, delete, search", not
+SQLAlchemy. Depending on the protocol keeps the business rules free of database
+details and lets the unit tests run the service against an in-memory fake.
+
+Why each write commits: every request gets its own session (`get_db`) and each
+use case performs a single write, so one operation = one transaction. Committing
+here keeps transaction handling out of the service.
 """
 
 from typing import Protocol
@@ -26,6 +34,9 @@ def _contains_pattern(term: str) -> str:
     Returns:
         The escaped pattern wrapped in `%` wildcards.
     """
+    # Without escaping, searching "100%" would match "100 anything" and "_" would
+    # match any single character. The escape character itself is escaped first;
+    # doing it last would double the backslashes added for `%` and `_`.
     escaped = (
         term.replace(LIKE_ESCAPE_CHAR, LIKE_ESCAPE_CHAR * 2)
         .replace("%", f"{LIKE_ESCAPE_CHAR}%")
@@ -115,6 +126,8 @@ class BookRepository:
         """
         self._session.add(book)
         self._session.commit()
+        # Reload the row so the returned object carries what the database
+        # generated (the id) exactly as it was stored.
         self._session.refresh(book)
         return book
 
@@ -138,6 +151,8 @@ class BookRepository:
         Returns:
             The book, refreshed from the database.
         """
+        # No `add` needed: the book was loaded by this session, which tracks its
+        # attributes and emits an UPDATE with only the changed columns on commit.
         self._session.commit()
         self._session.refresh(book)
         return book
@@ -163,6 +178,8 @@ class BookRepository:
         Returns:
             The matching books ordered by id.
         """
+        # Filters are optional, so the query is built step by step; each `where`
+        # adds an AND condition. `ilike` makes the match case-insensitive.
         statement = select(Book)
         if title:
             statement = statement.where(
@@ -172,5 +189,7 @@ class BookRepository:
             statement = statement.where(
                 Book.author.ilike(_contains_pattern(author), escape=LIKE_ESCAPE_CHAR)
             )
+        # Offset pagination needs a stable order: without ORDER BY the database may
+        # return rows in any order, and pages could repeat or skip books.
         statement = statement.order_by(Book.id).offset(skip).limit(limit)
         return list(self._session.scalars(statement))
