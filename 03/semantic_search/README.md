@@ -140,7 +140,8 @@ Step by step:
    over the chunk text **plus its enrichment**, so "prisão de ventre" matches a chunk
    whose article only says "obstipação".
 4. **Fuse.** Reciprocal Rank Fusion combines both rankings by position, so the two
-   incomparable score scales never need to be mixed.
+   incomparable score scales never need to be mixed. The BM25 ranking weighs 2, the
+   dense one 1 (measured in [docs/EVALUATION.md](docs/EVALUATION.md)).
 5. **Boost.** Candidates whose category or content type matches the query get a share
    of their remaining score headroom (`METADATA_BOOST`). It is a boost, not a filter:
    a wrong guess of the LLM must not hide the answer.
@@ -297,7 +298,7 @@ uv run python -m app.cli stats
 ## Evaluation
 
 60 questions written the way users write them ([data/eval/queries.json](data/eval/queries.json)),
-each with its expected article(s), on a 2012 CPU.
+each with its expected article(s).
 
 With the LLM-enriched index (1,477 chunks, 7,162 generated questions), query rewrite off,
 cross-encoder with 20 candidates:
@@ -308,6 +309,15 @@ cross-encoder with 20 candidates:
 | passage + LLM block | original passage | **0.78** | 0.92 | **0.849** |
 | original passage | passage + LLM block | 0.72 | 0.92 | 0.799 |
 | **original passage (default)** | **original passage (default)** | 0.77 | **0.93** | 0.847 |
+
+Same setup, comparing where the 20 candidates come from:
+
+| Candidates from | hit@1 | hit@5 | MRR@10 |
+|---|---|---|---|
+| Semantic | 0.72 | 0.92 | 0.798 |
+| BM25 | 0.77 | 0.90 | 0.820 |
+| Hybrid (RRF 1:1) | 0.77 | 0.93 | 0.847 |
+| **Hybrid, BM25 weight 2 (default)** | **0.80** | **0.95** | **0.858** |
 
 First results, before the enrichment existed:
 
@@ -343,10 +353,9 @@ uv run mypy                  # strict
 
 - **Measure the remaining LLM steps.** The query rewrite, the multi-query and the
   metadata boost still need to be evaluated; any of them that does not improve the
-  numbers should be turned off. A BM25 weight of 2 in the RRF helped before the
-  cross-encoder and still has to be checked after it.
+  numbers should be turned off.
 - **The evaluation set is small** (each question is 1.7 points of hit@5) and was written
   by someone who knows the collection; real user questions would make it more reliable.
-- **The cross-encoder dominates the latency on CPU** (about 10 s per query on the test
-  machine with 20 candidates; much less on a recent CPU).
+- **The cross-encoder dominates the latency on CPU:** it reads the 20 candidates of every
+  query and is the slowest step of the search.
 - The LLM adds one call per new query (about a second); it is cached per query.

@@ -1,8 +1,15 @@
-"""Evaluate search configurations on the evaluation set (`data/eval/queries.json`).
+"""Evaluate search configurations on an evaluation set.
 
     uv run python scripts/evaluate.py                       # default configurations
     uv run python scripts/evaluate.py --configs bm25,hybrid,hybrid+rerank@30
     uv run python scripts/evaluate.py --list                # show every configuration
+    uv run python scripts/evaluate.py --eval-set data/eval/holdout.json \
+        --configs hybrid+rewrite+rerank@20                  # held-out set
+
+`data/eval/queries.json` is the development set: every parameter was chosen on it.
+`data/eval/holdout.json` was written after the tuning and is only run to report the
+final configuration; changing a parameter because of it would turn it into a second
+development set.
 
 The models and the index are loaded once and shared by every configuration. The
 configurations ending in "+rewrite" call the LLM and need OPENAI_API_KEY; they are
@@ -51,13 +58,15 @@ CONFIGS: dict[str, Config] = {
     "bm25": Config("keyword"),
     "semantic": Config("semantic"),
     "hybrid": Config("hybrid"),
-    "hybrid-dense-x2": Config("hybrid", overrides={"rrf_dense_weight": 2.0}),
-    "hybrid-bm25-x2": Config("hybrid", overrides={"rrf_keyword_weight": 2.0}),
+    "hybrid-1x1": Config("hybrid", overrides={"rrf_dense_weight": 1.0, "rrf_keyword_weight": 1.0}),
+    "hybrid-dense-x2": Config(
+        "hybrid", overrides={"rrf_dense_weight": 2.0, "rrf_keyword_weight": 1.0}
+    ),
     "hybrid+rerank@10": Config("hybrid", rerank=True, overrides={"rerank_candidates": 10}),
     "hybrid+rerank@20": Config("hybrid", rerank=True, overrides={"rerank_candidates": 20}),
     "hybrid+rerank@30": Config("hybrid", rerank=True, overrides={"rerank_candidates": 30}),
-    "hybrid-bm25-x2+rerank@20": Config(
-        "hybrid", rerank=True, overrides={"rerank_candidates": 20, "rrf_keyword_weight": 2.0}
+    "hybrid-1x1+rerank@20": Config(
+        "hybrid", rerank=True, overrides={"rerank_candidates": 20, "rrf_keyword_weight": 1.0}
     ),
     "bm25+rerank@20": Config("keyword", rerank=True, overrides={"rerank_candidates": 20}),
     "semantic+rerank@20": Config("semantic", rerank=True, overrides={"rerank_candidates": 20}),
@@ -101,7 +110,14 @@ def main() -> int:
         help="Comma-separated configuration names (see --list).",
     )
     parser.add_argument("--list", action="store_true", help="List the configurations.")
-    parser.add_argument("--misses", action="store_true", help="Print the queries missed at 5.")
+    parser.add_argument(
+        "--eval-set", type=Path, default=EVAL_SET, help=f"Questions to run (default: {EVAL_SET})."
+    )
+    parser.add_argument(
+        "--misses",
+        action="store_true",
+        help="Print the queries missed at 5 and the out-of-scope queries flagged as relevant.",
+    )
     args = parser.parse_args()
 
     if args.list:
@@ -118,7 +134,7 @@ def main() -> int:
     settings = get_settings()
     configure_logging("WARNING")
     logging.getLogger("app").setLevel(logging.WARNING)
-    queries = load_eval_set(EVAL_SET)
+    queries = load_eval_set(args.eval_set)
     artifacts = load_artifacts(settings.storage_dir)
     embedder = build_embedder(settings)
     needs_rerank = any(CONFIGS[name].rerank for name in names)
@@ -158,6 +174,11 @@ def main() -> int:
                 print(
                     f"   miss {outcome.query.id} '{outcome.query.query}' -> rank {outcome.rank}, "
                     f"expected {outcome.query.relevant}, got {outcome.returned[:3]}"
+                )
+            for outcome in report.leaks():
+                print(
+                    f"   leak {outcome.query.id} '{outcome.query.query}' -> "
+                    f"shown as relevant: {outcome.returned[:1]}"
                 )
 
     print()

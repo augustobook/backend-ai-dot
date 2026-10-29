@@ -11,11 +11,18 @@ uv run python scripts/evaluate.py                    # configurações rápidas 
 uv run python scripts/evaluate.py --list             # todas as configurações
 uv run python scripts/evaluate.py --misses \
     --configs hybrid,hybrid+rerank@20                # quais perguntas cada uma erra
+uv run python scripts/evaluate.py \
+    --eval-set data/eval/holdout.json \
+    --configs hybrid+rewrite+rerank@20               # conjunto reservado
 ```
 
 - **Conjunto de avaliação:** [data/eval/queries.json](../data/eval/queries.json), 60
-  perguntas escritas como um usuário escreveria (50 em linguagem popular, 4 em inglês,
-  3 com termo exato), cada uma com o(s) artigo(s) que a respondem.
+  perguntas escritas como um usuário escreveria (54 em linguagem popular, 3 em inglês,
+  3 com termo exato), cada uma com o(s) artigo(s) que a respondem. É o **conjunto de
+  desenvolvimento**: todos os parâmetros foram escolhidos olhando para ele.
+- **Conjunto reservado:** [data/eval/holdout.json](../data/eval/holdout.json), escrito
+  depois de todos os ajustes e rodado só para reportar a configuração final. Mudar um
+  parâmetro por causa dele o transformaria em um segundo conjunto de desenvolvimento.
 - **Métricas**, no nível do artigo (o que a busca devolve):
   - **hit@1:** o 1º resultado é um artigo esperado;
   - **hit@5:** um artigo esperado está entre os 5 primeiros;
@@ -24,11 +31,26 @@ uv run python scripts/evaluate.py --misses \
 - O código ([app/evaluation.py](../app/evaluation.py)) não depende do assunto: para outro
   acervo, basta escrever outro arquivo de perguntas.
 
+> **Como ler as diferenças (ruído estatístico).** Com 60 perguntas, cada pergunta vale
+> **0,017** em hit@1 e hit@5 (1/60). Uma diferença de 0,01 a 0,02 é **uma pergunta** que
+> mudou de lado, e pode vir de um detalhe qualquer (a reescrita da LLM variar, um empate de
+> notas). Por isso, neste documento:
+>
+> - diferença de **até 2 perguntas** (≤ 0,03 em hit@k, ≤ 0,02 em MRR) é tratada como
+>   **empate**: a decisão sai por outro critério (custo, latência, simplicidade);
+> - uma técnica só é chamada de **ganho** quando melhora **3 perguntas ou mais** e não piora
+>   as outras métricas;
+> - o MRR varia um pouco mais fino (uma pergunta que sobe do 2º para o 1º lugar soma 0,008),
+>   mas a mesma regra vale.
+>
+> Mesmo um ganho de 3 perguntas, com um conjunto deste tamanho, é um indício, não uma prova.
+> Por isso o [conjunto reservado](../data/eval/holdout.json) existe: confirmar a
+> configuração final com perguntas que não influenciaram nenhuma escolha.
+
 ## Resultados sem LLM (29/10/2026, manhã)
 
 Índice com 100 artigos e 1.525 trechos, **sem enriquecimento pela LLM** e sem reescrita
-da pergunta (não havia chave da OpenAI). CPU Intel de 2012 sem AVX2, PyTorch com 2
-threads; numa CPU atual as latências do cross-encoder são bem menores.
+da pergunta (não havia chave da OpenAI). Latências medidas em CPU, sem GPU.
 
 | Configuração | hit@1 | hit@5 | MRR@10 | Latência média |
 |---|---|---|---|---|
@@ -67,8 +89,33 @@ da pergunta **desligada** em todas as medições abaixo, para isolar cada etapa.
 O enriquecimento fortaleceu muito o BM25 (hit@1 0,63 → 0,70), porque os termos
 semelhantes e as perguntas geradas trazem as palavras dos usuários. Com isso, a fusão
 1:1 passou a puxar o 1º lugar para baixo (0,70 → 0,63), e só ganha uma pergunta no top 5.
-Peso 2 para o BM25 recupera o topo **antes** do cross-encoder; ainda falta medir se o
-ganho continua **depois** dele, que é o que aparece na tela.
+Peso 2 para o BM25 recupera o topo **antes** do cross-encoder; a tabela seguinte mede
+**depois** dele, que é o que aparece na tela.
+
+### Com e sem fusão, depois do cross-encoder
+
+Mesmo índice (vetor e cross-encoder lendo o trecho original), cross-encoder com 20
+candidatos. A pergunta aqui é se a fusão ainda compensa quando o BM25 sozinho já é forte:
+
+| Candidatos vêm de | hit@1 | hit@5 | MRR@10 |
+|---|---|---|---|
+| Semântica | 0,72 | 0,92 | 0,798 |
+| BM25 | 0,77 | 0,90 | 0,820 |
+| Híbrida (RRF 1:1) | 0,77 | 0,93 | 0,847 |
+| **Híbrida, BM25 com peso 2** | **0,80** | **0,95** | **0,858** |
+
+- **A fusão compensa.** Depois do cross-encoder, o 1º lugar da lista de candidatos não
+  importa; importa a resposta certa estar entre os 20. Cada busca sozinha deixa
+  respostas de fora: o BM25 perde paráfrases e inglês ("açúcar alto no sangue",
+  "how much water should I drink…"), a semântica perde descrições longas ("rosto torto e
+  fala enrolada de repente", "mania de conferir a porta e lavar as mãos várias vezes").
+  Juntas, erram menos que cada uma.
+- **Peso 2 para o BM25** ganha nos dois pontos medidos (antes e depois do cross-encoder),
+  sem custo de tempo (o cross-encoder lê os mesmos 20 candidatos). A diferença depois
+  dele é pequena (2 perguntas em hit@1 e 1 em hit@5, em 60), mas não perde em nenhuma
+  métrica; passou a ser o padrão.
+- Duas perguntas ficam fora do top 5 em todas as configurações: "ardência ao fazer xixi"
+  (infecção urinária) e "pegar no sono de dia sem conseguir evitar" (narcolepsia).
 
 ### Texto juntado × independente
 
@@ -118,12 +165,12 @@ Com 0,3, um terço das respostas certas aparecia como "baixa relevância". Era o
 
 | Técnica | Resultado | Decisão |
 |---|---|---|
-| Busca híbrida (BM25 + semântica) | hit@5 0,90, contra 0,85 (BM25) e 0,80 (semântica) | **Mantida** |
-| Pesos do RRF diferentes de 1:1 | 0,88 nos dois casos; não melhora | **Mantido 1:1** |
+| Busca híbrida (BM25 + semântica) | hit@5 0,90, contra 0,85 (BM25) e 0,80 (semântica); com índice enriquecido e cross-encoder, MRR 0,847 contra 0,820 (BM25) e 0,798 (semântica) | **Mantida** |
+| Pesos do RRF diferentes de 1:1 | sem enriquecimento, 0,88 nos dois casos; com enriquecimento, BM25 peso 2 leva o MRR depois do cross-encoder de 0,847 para 0,858 (diferença de 1 a 2 perguntas) | **Padrão passou a ser BM25 com peso 2** (semântica 1) |
 | Cross-encoder | hit@1 0,63 → 0,77 e MRR 0,741 → 0,840 | **Mantido** |
 | Candidatos do cross-encoder | 20 empata com 30 (MRR 0,840 × 0,834) com 40% menos tempo; 10 perde (0,793) | **Padrão passou de 30 para 20** |
 | Stemming no BM25 | hit@5 cai 0,85 → 0,77 (BM25) e 0,90 → 0,83 (híbrida) | **Removido** |
-| Cross-encoder quantizado (int8) | sem ganho de velocidade nem de memória nesta CPU, e as notas mudaram até 0,09 | **Não implementado** |
+| Cross-encoder quantizado (int8) | sem ganho de velocidade nem de memória, e as notas mudaram até 0,09 | **Não implementado** |
 | `multilingual-e5-base` no lugar do e5-small | ~10× mais lento por pergunta, 1,9 GB, e não resolveu o vocabulário popular | **Descartado** |
 | Cross-encoder lendo o bloco da LLM | hit@1 0,78 → 0,73 e MRR 0,849 → 0,806 | **Passou a ler só o trecho original** |
 | Vetor do trecho com o bloco da LLM | empate com o trecho original | **Só o trecho original** (separação mais limpa; as perguntas já têm vetor próprio) |

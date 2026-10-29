@@ -381,13 +381,13 @@ vez.
 O dispositivo é a CPU por padrão, ou a GPU quando houver (`DEVICE=auto`). O número de
 threads da CPU pode ser limitado com `TORCH_NUM_THREADS`, útil em containers.
 
-### Medições (só CPU, 4 núcleos, PyTorch com 2 threads)
+### Medições (só CPU, sem GPU)
 
 | Métrica | Valor |
 |---|---|
 | RAM com o modelo carregado | ~0,9 GB |
 | RAM do processo de busca (embedder + cross-encoder) | ~1,5 GB |
-| Vazão na ingestão | ~1,9 trechos/s (os 1.477 trechos levaram ~10 min nesta máquina, uma vez) |
+| Vazão na ingestão | ~1,9 trechos/s (os 1.477 trechos levaram ~10 min, uma vez) |
 | Vetorizar uma pergunta | ~90–110 ms |
 
 As perguntas geradas são curtas (cerca de 15 tokens), então vetorizá-las é bem mais
@@ -542,7 +542,8 @@ conteúdo) e o mesmo modelo
    reescrita ruim não decide a busca sozinha.
 3. **BM25.** Busca todas essas formulações mais os termos semelhantes sobre o trecho
    mais o bloco da LLM.
-4. **Fusão (RRF)** das duas listas pela posição.
+4. **Fusão (RRF)** das duas listas pela posição, com peso 2 para o BM25 e 1 para a
+   semântica.
 5. **Reforço por metadados.** Candidatos cuja categoria ou tipo de conteúdo combinam com
    os da pergunta ganham `METADATA_BOOST` da folga que falta para a nota máxima
    (`nota + reforço × (1 − nota)`, uma vez para cada combinação). É um reforço, nunca um

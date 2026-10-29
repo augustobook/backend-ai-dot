@@ -126,7 +126,7 @@ class Settings(BaseSettings):
     rerank_candidates: int = Field(default=20, gt=0)
     rrf_k: int = Field(default=60, gt=0)
     rrf_dense_weight: float = Field(default=1.0, ge=0.0)
-    rrf_keyword_weight: float = Field(default=1.0, ge=0.0)
+    rrf_keyword_weight: float = Field(default=2.0, ge=0.0)
     bm25_k1: float = Field(default=1.5, gt=0.0)
     bm25_b: float = Field(default=0.75, ge=0.0, le=1.0)
     context_neighbors: int = Field(default=1, ge=0)

@@ -107,6 +107,12 @@ markers = [
 [tool.coverage.run]
 source = ["app"]
 branch = true
+# Thin adapters that load the real Hugging Face models (~1 GB): the tests run offline
+# with fakes of the same interfaces, so these files only run with the real models.
+omit = [
+    "app/embeddings/transformers_embedder.py",
+    "app/reranking/cross_encoder.py",
+]
 
 [tool.coverage.report]
 show_missing = true

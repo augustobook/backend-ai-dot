@@ -139,7 +139,9 @@ Passo a passo:
    no texto do trecho **mais o seu enriquecimento**. Assim, "prisão de ventre" encontra
    um trecho cujo artigo só diz "obstipação".
 4. **Fundir.** O Reciprocal Rank Fusion combina as duas listas pela posição, então as
-   duas escalas de nota, que não são comparáveis, nunca precisam ser misturadas.
+   duas escalas de nota, que não são comparáveis, nunca precisam ser misturadas. A lista
+   do BM25 tem peso 2 e a da semântica, peso 1 (medido em
+   [docs/EVALUATION.md](docs/EVALUATION.md)).
 5. **Reforçar.** Candidatos cuja categoria ou tipo de conteúdo combinam com a pergunta
    ganham uma parte da folga que falta para a nota máxima (`METADATA_BOOST`). É um
    reforço, não um filtro: um palpite errado da LLM não pode esconder a resposta.
@@ -297,7 +299,7 @@ uv run python -m app.cli stats
 ## Avaliação
 
 60 perguntas escritas como os usuários escrevem ([data/eval/queries.json](data/eval/queries.json)),
-cada uma com o(s) artigo(s) esperado(s), numa CPU de 2012.
+cada uma com o(s) artigo(s) esperado(s).
 
 Com o índice enriquecido pela LLM (1.477 trechos, 7.162 perguntas geradas), reescrita da
 pergunta desligada e cross-encoder com 20 candidatos:
@@ -308,6 +310,15 @@ pergunta desligada e cross-encoder com 20 candidatos:
 | trecho + bloco da LLM | trecho original | **0,78** | 0,92 | **0,849** |
 | trecho original | trecho + bloco da LLM | 0,72 | 0,92 | 0,799 |
 | **trecho original (padrão)** | **trecho original (padrão)** | 0,77 | **0,93** | 0,847 |
+
+Mesma configuração, comparando de onde vêm os 20 candidatos:
+
+| Candidatos vêm de | hit@1 | hit@5 | MRR@10 |
+|---|---|---|---|
+| Semântica | 0,72 | 0,92 | 0,798 |
+| BM25 | 0,77 | 0,90 | 0,820 |
+| Híbrida (RRF 1:1) | 0,77 | 0,93 | 0,847 |
+| **Híbrida, BM25 com peso 2 (padrão)** | **0,80** | **0,95** | **0,858** |
 
 Primeiros resultados, antes de existir o enriquecimento:
 
@@ -343,12 +354,11 @@ uv run mypy                  # modo estrito
 
 - **Medir as etapas com LLM que faltam.** A reescrita da pergunta, o multi-query e o
   reforço por metadados ainda precisam ser avaliados; o que não melhorar os números deve
-  ser desligado. Peso 2 para o BM25 no RRF ajudou antes do cross-encoder e ainda precisa
-  ser conferido depois dele.
+  ser desligado.
 - **O conjunto de avaliação é pequeno** (cada pergunta vale 1,7 ponto de hit@5) e foi
   escrito por quem conhece o acervo; perguntas reais de usuários o tornariam mais
   confiável.
-- **O cross-encoder domina a latência em CPU** (cerca de 10 s por pergunta na máquina de
-  teste com 20 candidatos; bem menos numa CPU atual).
+- **O cross-encoder domina a latência em CPU:** ele lê os 20 candidatos de cada pergunta,
+  e é a etapa mais lenta da busca.
 - A LLM acrescenta uma chamada por pergunta nova (cerca de um segundo), com cache por
   pergunta.
