@@ -1,0 +1,62 @@
+[
+  {
+    "id": "c1-listas",
+    "turns": [
+      {"question": "Como criar uma lista em Python?"},
+      {"question": "E como adiciono e removo itens dela?", "needs_history": true},
+      {"question": "Qual a diferença entre lista e tupla?", "needs_history": false},
+      {"question": "Mostre um exemplo usando as duas no mesmo código.", "needs_history": true},
+      {"question": "Como funciona o operador walrus (:=)?", "needs_history": false}
+    ]
+  },
+  {
+    "id": "c2-decorators",
+    "turns": [
+      {"question": "O que são decorators?"},
+      {"question": "Pode dar um exemplo com argumentos?", "needs_history": true},
+      {"question": "E se eu quiser preservar o nome da função original?", "needs_history": true},
+      {"question": "Como medir o tempo de execução de uma função em Python?", "needs_history": false},
+      {"question": "Transforme isso em um decorator.", "needs_history": true}
+    ]
+  },
+  {
+    "id": "c3-csv",
+    "turns": [
+      {"question": "How do I read a CSV file in Python?"},
+      {"question": "What about writing one?", "needs_history": true},
+      {"question": "How do I handle exceptions in Python?", "needs_history": false},
+      {"question": "Why is a bare except considered bad practice in Python?", "needs_history": false},
+      {"question": "Rewrite the example from your previous answer without it.", "needs_history": true}
+    ]
+  },
+  {
+    "id": "c4-concorrencia",
+    "turns": [
+      {"question": "Como funciona o asyncio?"},
+      {"question": "Qual a diferença entre threading e multiprocessing em Python?", "needs_history": false},
+      {"question": "Quando devo usar cada um deles?", "needs_history": true},
+      {"question": "Explique o que é o GIL do Python.", "needs_history": false},
+      {"question": "Ele foi removido no Python 3.13?", "needs_history": true}
+    ]
+  },
+  {
+    "id": "c5-generators",
+    "turns": [
+      {"question": "What is a generator in Python?"},
+      {"question": "Show me one that reads a large file line by line.", "needs_history": true},
+      {"question": "How do I create a virtual environment in Python?", "needs_history": false},
+      {"question": "And how do I activate it on Windows?", "needs_history": true},
+      {"question": "What does the __init__.py file do?", "needs_history": false}
+    ]
+  },
+  {
+    "id": "c6-http",
+    "turns": [
+      {"question": "Como fazer uma requisição HTTP com a biblioteca requests?"},
+      {"question": "E com httpx, como fica o mesmo código?", "needs_history": true},
+      {"question": "O que são type hints em Python?", "needs_history": false},
+      {"question": "Adicione type hints na função que você escreveu antes.", "needs_history": true},
+      {"question": "Qual a diferença entre is e == em Python?", "needs_history": false}
+    ]
+  }
+]

@@ -9,8 +9,10 @@ Prompt engineering decisions (each one maps to a section of `SYSTEM_PROMPT`):
    practices) produces didactic answers that are easy to scan, and Markdown code
    blocks render nicely in the CLI (rich) and in the web UI (Chainlit).
 3. Language: the model must answer in the language of the user's latest message,
-   so a Portuguese question gets a Portuguese answer, while code identifiers stay in
-   English (the convention of the Python ecosystem).
+   while code identifiers stay in English (the convention of the Python ecosystem).
+   The rule is short and names no language on purpose: when the prompt gave
+   Portuguese as an example, the evaluation caught gpt-4o-mini answering English
+   questions in Portuguese (see docs/EVALUATION.md).
 4. Scope: only Python programming topics are answered. Off-topic questions get a
    short, polite refusal that redirects to Python, which keeps the bot focused and
    reduces misuse/cost.
@@ -18,7 +20,9 @@ Prompt engineering decisions (each one maps to a section of `SYSTEM_PROMPT`):
    (prompt injection: "ignore the rules", "act as another assistant"), and the
    system prompt is never revealed. Harmful code is refused even when it is Python
    (the scope rule alone would allow it). Pasted secrets (API keys, passwords) get
-   a warning and are never echoed back, since learners often paste real config.
+   a warning and are never echoed back, since learners often paste real config;
+   the rule spells out code examples and shell commands, where the evaluation
+   caught the model pasting the key into an `export OPENAI_API_KEY=...` sample.
 6. Conversation context: the model is told to use the history to resolve follow-up
    questions ("and how do I add an item to it?") instead of asking again.
 7. Honesty: when unsure (e.g. very recent library versions), say so instead of
@@ -35,14 +39,11 @@ SYSTEM_PROMPT = """\
 You are "Python Tutor", the Python programming assistant of DOT Group: a patient \
 and experienced senior Python developer who teaches Python programming to \
 learners of every level.
-- When asked who you are, introduce yourself as DOT Group's Python Tutor \
-(in Portuguese: "Python Tutor da DOT Group").
+- When asked who you are, introduce yourself as DOT Group's Python Tutor.
 
 # Language
-- Always answer in the same language as the user's latest message \
-(e.g. a question in Portuguese gets an answer in Portuguese).
-- Keep code identifiers (variables, functions, classes) in English, as is \
-conventional in Python, but write code comments in the user's language.
+- Reply in the same language the user wrote their latest message in. Keep code \
+identifiers in English.
 
 # Scope
 - You ONLY answer questions about Python programming: the language itself, its \
@@ -67,11 +68,14 @@ or denial-of-service tools. Briefly decline and suggest a legitimate related top
 (for example, how to defend against that attack). Defensive and educational \
 security topics, such as input validation, password hashing or handling secrets \
 safely, are fine.
-- If the user shares something that looks like a secret (API keys, tokens, \
-passwords, private keys, connection strings with credentials), warn them that it \
-should not be shared and should be revoked or rotated, never repeat the value in \
-your answer (use a placeholder such as "sk-..."), and show how to load it from an \
-environment variable instead.
+- Secrets pasted by the user are replaced with [REDACTED] before reaching you. \
+When you see [REDACTED], or anything else that looks like a secret (API keys, \
+tokens, passwords, private keys, connection strings with credentials), warn the \
+user that it \
+should not be shared and should be revoked or rotated, and show how to load it \
+from an environment variable instead. Never repeat the secret value anywhere in \
+your answer, including code examples, shell commands and `.env` samples: always \
+write a placeholder such as "sk-..." or "<your-password>" in its place.
 
 # How to answer
 Write didactic, detailed and well-structured answers in Markdown:

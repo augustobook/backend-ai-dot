@@ -30,10 +30,13 @@ class Settings(BaseSettings):
         openai_max_tokens: Maximum tokens per answer (bounds latency and cost).
         openai_context_window: Total tokens the model accepts per request (prompt +
             answer). 128k for gpt-4o / gpt-4o-mini; adjust when changing the model.
+        max_conversation_tokens: Token budget of a whole conversation (system
+            prompt + full history + question). 64k by default, half of what the
+            model accepts; see the README ("Limites") for why.
         openai_timeout: Seconds before an OpenAI request is aborted.
         openai_max_retries: Automatic retries for transient OpenAI failures.
         history_router_enabled: Whether a router decides, per question, if the
-            conversation history is sent (False = always send it).
+            conversation history is sent (False, the default, always sends it).
         history_router_model: OpenAI model used by the router (cheap and fast).
         rate_limit_per_minute: Questions one client (IP) may ask per minute in the
             web UI and the API (0 disables this limit).
@@ -63,11 +66,17 @@ class Settings(BaseSettings):
     openai_max_retries: int = Field(default=2, ge=0)
 
     # --- Conversation -------------------------------------------------------------
-    # Ask a small LLM router, per question, whether the history must be sent.
-    history_router_enabled: bool = True
+    # The whole history is re-sent with every question, so the last questions of a
+    # long conversation are the most expensive and the slowest. 64k bounds that cost
+    # at half of the model window and keeps the prompt where models stay reliable.
+    max_conversation_tokens: int = Field(default=64_000, gt=0)
+    # Ask an LLM router, per question, whether the history must be sent. Off by
+    # default: measured, it adds ~1 s before every answer and only saves money once
+    # the history passes ~3.3k tokens (docs/EVALUATION.md).
+    history_router_enabled: bool = False
     # Cheapest and fastest OpenAI model for a yes/no decision. A non-reasoning
     # model is preferred: reasoning models spend extra "thinking" tokens and time.
-    history_router_model: str = "gpt-4.1-nano"
+    history_router_model: str = "gpt-4o-mini"
 
     # --- Rate limit (per client IP; the CLI is local and never limited) -----------
     # Every question costs OpenAI tokens, so a public deployment must bound them.
@@ -88,9 +97,13 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_token_limits(self) -> Self:
-        """Ensure the context window leaves room for the prompt after the answer."""
+        """Ensure the longest prompt plus the longest answer fit in the context window."""
         if self.openai_max_tokens >= self.openai_context_window:
             raise ValueError("OPENAI_MAX_TOKENS must be smaller than OPENAI_CONTEXT_WINDOW.")
+        if self.max_conversation_tokens + self.openai_max_tokens > self.openai_context_window:
+            raise ValueError(
+                "MAX_CONVERSATION_TOKENS + OPENAI_MAX_TOKENS must fit in OPENAI_CONTEXT_WINDOW."
+            )
         return self
 
     @property
@@ -101,18 +114,6 @@ class Settings(BaseSettings):
             True when the key is present and not only whitespace.
         """
         return bool(self.openai_api_key and self.openai_api_key.get_secret_value().strip())
-
-    @property
-    def max_conversation_tokens(self) -> int:
-        """Token budget of a whole conversation (system prompt + history + question).
-
-        The model must fit the full prompt *and* the answer in its context window,
-        so the room reserved for the answer is subtracted from the window.
-
-        Returns:
-            The maximum number of prompt tokens a request may use.
-        """
-        return self.openai_context_window - self.openai_max_tokens
 
 
 @lru_cache

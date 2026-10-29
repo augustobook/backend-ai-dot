@@ -27,6 +27,7 @@ from app.core.exceptions import (
     LLMUnavailableError,
     QuestionTooLongError,
 )
+from app.core.redaction import redact_secrets
 from app.llm.chain import (
     USE_HISTORY_KEY,
     TokenCounter,
@@ -47,8 +48,8 @@ Interface = Literal["cli", "api", "web", "script"]
 
 RUN_NAME = "python_tutor_chat"
 
-# 128k context window (gpt-4o / gpt-4o-mini) minus room for a 4096-token answer.
-DEFAULT_MAX_CONVERSATION_TOKENS = 128_000 - 4_096
+# Same default as `Settings.max_conversation_tokens` (half of gpt-4o-mini's window).
+DEFAULT_MAX_CONVERSATION_TOKENS = 64_000
 
 # From this fraction of the token budget on, interfaces warn the user.
 USAGE_WARNING_RATIO = 0.8
@@ -114,7 +115,7 @@ class ChatService:
     Args:
         model: Chat model used to answer (injected so tests can use a fake model).
         max_conversation_tokens: Token budget of the prompt (system prompt + full
-            history + question). Defaults to a 128k window minus a 4096-token answer.
+            history + question). Defaults to 64k tokens.
         token_counter: Counts the tokens of a prompt. Defaults to an approximation;
             production injects the model's exact tokenizer.
         history_router: Decides per question whether to send the history. Without
@@ -240,8 +241,27 @@ class ChatService:
         config.setdefault("tags", []).append(f"history:{'used' if use_history else 'skipped'}")
         return {QUESTION_KEY: question, USE_HISTORY_KEY: use_history}
 
+    @staticmethod
+    def _redact(session_id: str, question: str) -> str:
+        """Replace pasted secrets before the question goes anywhere.
+
+        The redacted text is what the router, the model, the history and the
+        traces see, so a pasted key never leaves the process.
+
+        Args:
+            session_id: Identifier of the conversation (for the log).
+            question: The question as typed.
+
+        Returns:
+            The question with secrets replaced by a placeholder.
+        """
+        redacted, count = redact_secrets(question)
+        if count:
+            logger.warning("Redacted %d secret(s) from a question (session=%s).", count, session_id)
+        return redacted
+
     def _prepare(self, session_id: str, question: str, config: RunnableConfig) -> dict[str, Any]:
-        """Check the limits and decide whether to send the history (sync).
+        """Redact secrets, check the limits and decide whether to send the history (sync).
 
         Args:
             session_id: Identifier of the conversation.
@@ -251,6 +271,7 @@ class ChatService:
         Returns:
             The chain input.
         """
+        question = self._redact(session_id, question)
         self._check_limits(session_id, question)
         use_history = True
         if self._history_router is not None:
@@ -263,6 +284,7 @@ class ChatService:
         self, session_id: str, question: str, config: RunnableConfig
     ) -> dict[str, Any]:
         """Asynchronous version of `_prepare`."""
+        question = self._redact(session_id, question)
         self._check_limits(session_id, question)
         use_history = True
         if self._history_router is not None:

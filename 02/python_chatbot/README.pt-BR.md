@@ -48,8 +48,9 @@ Docker em [Com Docker](#com-docker).
                               │      ChatService      │  1. pergunta ≤ 5000 caracteres?
                               │ (camada de services)  │  2. tokens(system + histórico
                               └───────────┬───────────┘     completo + pergunta) ≤ limite? (tiktoken)
-                                          │              3. roteador de histórico (gpt-4.1-nano):
-                                          │                 precisa do histórico?
+                                          │              0. troca segredos colados por [REDACTED]
+                                          │              3. roteador de histórico (opcional,
+                                          │                 desligado): precisa do histórico?
                                           ▼              converte erros da OpenAI em erros de domínio
    ┌───────────────────────── RunnableWithMessageHistory ──────────────────────────┐
    │  carrega o histórico do session_id ──▶ InMemoryChatMessageHistory (por sessão)│
@@ -69,7 +70,8 @@ Docker em [Com Docker](#com-docker).
 python_chatbot/
 ├── app/
 │   ├── cli.py                   # CLI interativa (rich)
-│   ├── core/                    # Settings, exceções de domínio, logging, configuração do LangSmith
+│   ├── core/                    # Settings, exceções de domínio, logging, LangSmith, remoção de segredos
+│   ├── evaluation.py            # Conjuntos, métricas e custos da avaliação (sem chamar a OpenAI)
 │   ├── llm/                     # Prompt de sistema, chain LCEL, roteador de histórico, histórico por sessão
 │   ├── services/                # ChatService: os casos de uso compartilhados por todas as interfaces
 │   ├── api/                     # App FastAPI, schemas, dependências, rotas
@@ -79,7 +81,10 @@ python_chatbot/
 ├── chainlit.md                  # Página de boas-vindas da interface web
 ├── data/                        # Histórico de conversas da web (SQLite, criado sob demanda; fora do git)
 ├── docs/EXAMPLES.md             # Perguntas e respostas reais (geradas pelo script abaixo)
+├── docs/EVALUATION.md           # Avaliação com o modelo real: resultados e decisões
+├── evals/                       # Conversas rotuladas (roteador) e casos de comportamento
 ├── scripts/generate_examples.py # Gera o docs/EXAMPLES.md
+├── scripts/evaluate.py          # Roda a avaliação com o modelo real
 ├── tests/                       # Testes unitários e de API (LLM falsa, sem chamadas à OpenAI)
 ├── .env.example                 # Todas as configurações com seus padrões
 ├── Dockerfile                   # Imagem multi-stage com uv, usuário não-root, roda a interface web
@@ -98,18 +103,29 @@ python_chatbot/
   `session_id` (uma execução da CLI, um cliente da API ou uma aba do navegador), então as
   conversas nunca se misturam. O armazenamento fica em memória por simplicidade; trocá-lo por
   Redis/SQL muda só o `app/llm/history.py`.
-- **Histórico: nunca cortado, enviado só quando necessário.** Um modelo pequeno e barato
-  decide, a cada pergunta, se a conversa é necessária; quando é, o histórico **completo** é
-  enviado (nenhuma mensagem é cortada). Veja
-  [Como o histórico da conversa é tratado](#como-o-histórico-da-conversa-é-tratado).
+- **Histórico: nunca cortado, sempre enviado.** O histórico **completo** vai em cada
+  pergunta. Um roteador que decidia, pergunta a pergunta, se a conversa era necessária foi
+  medido e **desligado por padrão**: acrescentava ~1 s antes de toda resposta e custava mais
+  do que economizava, porque 86% da entrada já vem do cache da OpenAI. Ele continua
+  disponível (`HISTORY_ROUTER_ENABLED=true`). Veja
+  [Como o histórico da conversa é tratado](#como-o-histórico-da-conversa-é-tratado) e
+  [docs/EVALUATION.md](docs/EVALUATION.md).
 - **Limites medidos em tokens.** As perguntas são limitadas a 5000 caracteres e cada
-  conversa à janela de contexto do modelo, contada exatamente com `tiktoken`; o usuário é
-  avisado aos 80%. Veja [Limites](#limites).
+  conversa a **64 mil tokens** (~120 perguntas), contados exatamente com `tiktoken`; o
+  usuário é avisado aos 80%. Veja [Limites](#limites).
+- **Segredos removidos no código.** Chaves de API, senhas em URLs e `password=...` colados
+  na pergunta são trocados por `[REDACTED]` antes de chegar ao modelo, ao histórico e ao
+  LangSmith (`app/core/redaction.py`). Pedir isso só no prompt não bastou: a avaliação pegou
+  o modelo colando a chave de volta num exemplo de código.
+- **Avaliação com o modelo real.** `scripts/evaluate.py` mede o roteador (acerto, latência,
+  tokens e custo) e o comportamento do tutor (idioma, escopo, prompt injection, segredos)
+  com um juiz LLM. Resultados e decisões em [docs/EVALUATION.md](docs/EVALUATION.md).
 - **Engenharia de prompt** (`app/llm/prompts.py`, cada decisão está comentada lá):
   um *papel* concreto (tutor sênior de Python, paciente); um *formato de resposta* fixo
   (conceito → código comentado em Markdown → armadilhas → boas práticas, proporcional à
   pergunta); uma *regra de idioma* (responder no idioma da última mensagem, identificadores de
-  código em inglês); uma *regra de escopo*; uso do *contexto da conversa*; e *honestidade*
+  código em inglês; curta e sem citar idiomas, porque um exemplo em português fazia o modelo
+  responder em português a perguntas em inglês); uma *regra de escopo*; uso do *contexto da conversa*; e *honestidade*
   (nunca inventar APIs).
 - **Restrição de escopo.** O prompt de sistema só permite assuntos de programação em Python;
   qualquer outro recebe uma recusa curta e educada que sugere um tema relacionado de Python.
@@ -140,10 +156,23 @@ python_chatbot/
 ## Como o histórico da conversa é tratado
 
 Cada conversa (`session_id`) mantém o seu **histórico completo**: toda pergunta e resposta é
-salva e **nenhuma mensagem é cortada**. O que muda de uma pergunta para a outra é apenas **se
-esse histórico é enviado ao modelo**. Enviá-lo junto com uma pergunta independente custaria
-mais e acrescentaria ruído; deixá-lo de fora de uma pergunta de acompanhamento produziria uma
-resposta errada. Um pequeno **roteador de histórico** decide, pergunta a pergunta.
+salva e **nenhuma mensagem é cortada**. Por padrão, o histórico completo é enviado em toda
+pergunta.
+
+Existe um **roteador de histórico** opcional (`HISTORY_ROUTER_ENABLED=true`) que decide,
+pergunta a pergunta, se o histórico é necessário: enviá-lo com uma pergunta independente
+custa mais; deixá-lo de fora de uma pergunta de acompanhamento produz uma resposta errada.
+**Ele vem desligado** porque, medido com o modelo real
+([docs/EVALUATION.md](docs/EVALUATION.md)), acertou 92% das decisões sem nunca deixar um
+follow-up sem contexto, mas:
+
+- acrescenta **~1 s antes de toda resposta** (é uma chamada a mais, antes da resposta);
+- **custa mais do que economiza** em conversas curtas (US$ −0,06 por 1.000 perguntas): a
+  OpenAI serve do cache o começo repetido do prompt, e 86% da entrada do tutor veio do cache,
+  pela metade do preço. Ele só passa a compensar quando o histórico passa de ~3.300 tokens.
+
+O fluxo abaixo mostra o que acontece com o roteador ligado; desligado, o passo 2 não existe e
+o passo 3 sempre envia o histórico completo.
 
 ### Fluxo de uma pergunta
 
@@ -151,7 +180,8 @@ resposta errada. Um pequeno **roteador de histórico** decide, pergunta a pergun
 Pergunta do usuário
       │
       ▼
-0. Limites (ChatService._check_limits)
+0. Segredos colados trocados por [REDACTED] (app/core/redaction.py), depois os limites
+   (ChatService._check_limits)
       ├─ pergunta > 5000 caracteres?                                → recusada (QuestionTooLongError)
       └─ prompt de sistema + histórico COMPLETO + pergunta > limite? → recusada (ConversationLimitError)
       │
@@ -159,8 +189,8 @@ Pergunta do usuário
 1. É a primeira pergunta da conversa?
       ├─ sim → não há histórico: nenhuma chamada extra
       └─ não ↓
-2. Chamada ao ROTEADOR (app/llm/router.py) ─ separada, pequena e barata
-      modelo : HISTORY_ROUTER_MODEL (padrão gpt-4.1-nano), temperatura 0, ≤ 150 tokens
+2. Chamada ao ROTEADOR (app/llm/router.py) ─ só com HISTORY_ROUTER_ENABLED=true
+      modelo : HISTORY_ROUTER_MODEL (padrão gpt-4o-mini), temperatura 0, ≤ 150 tokens
       entrada: instruções do roteador + ÚLTIMAS 6 mensagens (cada uma cortada em 600 caracteres)
                + a nova pergunta
       saída  : estruturada  { "needs_history": true | false, "reason": "..." }
@@ -195,25 +225,24 @@ sem histórico.
 - **Na dúvida, envia o histórico.** As instruções do roteador terminam com
   "When in doubt, answer true", e qualquer falha do roteador (timeout, saída inválida) também
   cai no envio do histórico: contexto a mais não atrapalha, contexto a menos sim.
-- **Barato e rápido de propósito.** O roteador usa um modelo nano separado, sem raciocínio,
-  com um limite de saída mínimo. Modelos de raciocínio (por exemplo a família nano do
-  `gpt-5`) podem ser mais baratos por token, mas gastam tokens de "raciocínio" e tempo numa
-  decisão de sim ou não.
+- **Modelo sem raciocínio.** O roteador usa o `gpt-4o-mini` com temperatura 0 e um limite de
+  saída mínimo. O `gpt-4.1-nano`, opção mais barata sem raciocínio, foi descontinuado pela
+  OpenAI; modelos de raciocínio (como os nanos do `gpt-5`) gastam tokens de "raciocínio" e
+  tempo numa decisão de sim ou não, e a latência já é o ponto fraco do roteador.
 - **Por que um roteador e não um agente.** Um agente com ferramentas ("chame `get_history`
   quando precisar") exigiria duas chamadas sempre que o histórico fosse necessário e
   complicaria o streaming. Uma única chamada de decisão estruturada responde à mesma pergunta
   de sim ou não.
-- **Custo.** A partir da segunda pergunta, cada pergunta acrescenta uma pequena chamada ao
-  roteador (algumas centenas de tokens no modelo mais barato). Em troca, perguntas
-  independentes deixam de levar a conversa inteira ao modelo tutor.
+- **Custo.** A partir da segunda pergunta, cada pergunta acrescenta uma chamada ao roteador
+  (~630 tokens). Em troca, perguntas independentes deixam de levar a conversa inteira ao
+  modelo tutor. Medido, isso só compensa em conversas longas (veja acima).
 - **Os limites não dependem da decisão.** O limite da conversa sempre conta o histórico
   completo, porque ele limita o tamanho da própria conversa.
 - **Observabilidade.** No LangSmith, cada pergunta mostra uma execução `history_router` (com o
   `reason`), e a execução da resposta leva o metadado `history_used` e a tag
   `history:used` ou `history:skipped`.
-- **Configuração.** `HISTORY_ROUTER_MODEL` troca o modelo do roteador;
-  `HISTORY_ROUTER_ENABLED=false` desliga o roteador (o histórico completo passa a ser sempre
-  enviado).
+- **Configuração.** `HISTORY_ROUTER_ENABLED=true` liga o roteador (padrão: desligado, o
+  histórico completo é sempre enviado); `HISTORY_ROUTER_MODEL` troca o modelo dele.
 
 Onde fica: o prompt e a lógica da decisão em [`app/llm/router.py`](app/llm/router.py)
 (`ROUTER_SYSTEM_PROMPT`, `HistoryRouter`); a decisão é aplicada em
@@ -226,15 +255,24 @@ a chain descarta o histórico quando `use_history` é falso
 - **Pergunta:** no máximo **5000 caracteres** (`MAX_QUESTION_LENGTH`), em todas as
   interfaces. Acima disso, `QuestionTooLongError` (API: `422`).
 - **Conversa:** os tokens de *prompt de sistema + histórico completo + nova pergunta* precisam
-  caber em `OPENAI_CONTEXT_WINDOW - OPENAI_MAX_TOKENS` (128000 - 4096 = 123904 tokens por
-  padrão), para o modelo sempre ter espaço para uma resposta completa. Acima disso,
-  `ConversationLimitError` (API: `409`) e o usuário é convidado a começar uma nova conversa; o
-  histórico fica intacto.
+  caber em **`MAX_CONVERSATION_TOKENS` (padrão 64000)**. Acima disso, `ConversationLimitError`
+  (API: `409`) e o usuário é convidado a começar uma nova conversa; o histórico fica intacto.
+  Por que 64 mil, e não os ~124 mil que o `gpt-4o-mini` aceitaria (128k menos a resposta):
+  - **custo:** todo o histórico vai em cada pergunta, então as últimas perguntas de uma
+    conversa longa são as mais caras; 64 mil corta esse pior caso pela metade;
+  - **qualidade:** modelos perdem precisão em contextos muito longos (informações no meio de
+    um prompt enorme são mais ignoradas); 64 mil fica na metade da janela;
+  - **latência:** o tempo até o primeiro pedaço da resposta cresce com o prompt;
+  - **não atrapalha o uso:** cada pergunta com resposta acrescenta ~516 tokens (medido),
+    então cabem **~120 perguntas** numa conversa, muito mais que uma sessão de estudo.
+
+  A configuração recusa um `MAX_CONVERSATION_TOKENS` que, somado a `OPENAI_MAX_TOKENS`, não
+  caiba em `OPENAI_CONTEXT_WINDOW`, para o modelo sempre ter espaço para a resposta.
 - **Resposta:** no máximo `OPENAI_MAX_TOKENS` (padrão 4096 tokens).
 - **A contagem de tokens** é **exata**, com o tokenizador do próprio modelo
   (`ChatOpenAI.get_num_tokens_from_messages`, que usa o `tiktoken`). Como referência:
-  prompt de sistema + uma pergunta curta ≈ 430 tokens; uma pergunta de 5000 caracteres ≈ 630
-  tokens. O contador é injetado no `ChatService`, então os testes usam um contador
+  o prompt de sistema tem ≈ 680 tokens; uma pergunta de 5000 caracteres (texto ou código)
+  tem ≈ 1.100 tokens. O contador é injetado no `ChatService`, então os testes usam um contador
   aproximado e continuam offline.
 - **Aviso aos 80%:** um toast na interface web (não salvo no histórico), uma linha amarela na
   CLI e os campos `conversation_usage_percent` / `near_conversation_limit` na resposta da API.
@@ -270,9 +308,10 @@ cp .env.example .env      # Windows (PowerShell): Copy-Item .env.example .env
 | `OPENAI_MODEL` | `gpt-4o-mini` | Modelo de chat da família GPT-4 |
 | `OPENAI_TEMPERATURE` | `0.3` | Temperatura de amostragem |
 | `OPENAI_MAX_TOKENS` | `4096` | Máximo de tokens por resposta |
-| `OPENAI_CONTEXT_WINDOW` | `128000` | Tokens que o modelo aceita por requisição (define o limite da conversa) |
-| `HISTORY_ROUTER_ENABLED` | `true` | Decide, a cada pergunta, se o histórico é enviado |
-| `HISTORY_ROUTER_MODEL` | `gpt-4.1-nano` | Modelo barato e rápido usado pelo roteador de histórico |
+| `OPENAI_CONTEXT_WINDOW` | `128000` | Tokens que o modelo aceita por requisição (prompt + resposta) |
+| `MAX_CONVERSATION_TOKENS` | `64000` | Limite de tokens de uma conversa inteira (veja [Limites](#limites)) |
+| `HISTORY_ROUTER_ENABLED` | `false` | Liga o roteador que decide, a cada pergunta, se o histórico é enviado |
+| `HISTORY_ROUTER_MODEL` | `gpt-4o-mini` | Modelo barato e rápido usado pelo roteador de histórico |
 | `RATE_LIMIT_PER_MINUTE` | `10` | Perguntas por IP de cliente por minuto (web e API; `0` desliga) |
 | `RATE_LIMIT_PER_DAY` | `100` | Perguntas por IP de cliente por dia (web e API; `0` desliga) |
 | `OPENAI_TIMEOUT` | `60` | Timeout da requisição (segundos) |

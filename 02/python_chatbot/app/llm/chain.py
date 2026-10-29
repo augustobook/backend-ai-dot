@@ -135,7 +135,7 @@ def build_router_model(settings: Settings) -> ChatOpenAI:
     """Create the model used by the history router.
 
     A separate, cheap and fast model (`HISTORY_ROUTER_MODEL`, default
-    gpt-4.1-nano), deterministic (temperature 0) and with a tiny answer budget:
+    gpt-4o-mini), deterministic (temperature 0) and with a tiny answer budget:
     it only returns a yes/no decision and a short reason.
 
     Args:

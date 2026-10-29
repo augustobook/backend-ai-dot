@@ -38,27 +38,47 @@ def test_settings_read_environment_variables(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
     monkeypatch.setenv("OPENAI_MODEL", "gpt-4o")
     monkeypatch.setenv("OPENAI_CONTEXT_WINDOW", "32000")
+    monkeypatch.setenv("MAX_CONVERSATION_TOKENS", "16000")
 
     settings = Settings(_env_file=None)
 
     assert settings.openai_model == "gpt-4o"
     assert settings.openai_context_window == 32000
+    assert settings.max_conversation_tokens == 16000
     assert "sk-env" not in repr(settings)
     assert settings.has_openai_api_key
 
 
-def test_conversation_budget_reserves_room_for_the_answer() -> None:
-    """The conversation budget is the context window minus the answer size."""
-    settings = Settings(_env_file=None, openai_context_window=128_000, openai_max_tokens=4096)
+def test_conversation_budget_defaults_to_64k_tokens() -> None:
+    """By default a conversation may use 64k tokens, half of gpt-4o-mini's window."""
+    settings = Settings(_env_file=None)
 
-    assert settings.openai_max_tokens == 4096
-    assert settings.max_conversation_tokens == 128_000 - 4096
+    assert settings.max_conversation_tokens == 64_000
+    assert settings.max_conversation_tokens + settings.openai_max_tokens <= (
+        settings.openai_context_window
+    )
+
+
+def test_conversation_budget_must_leave_room_for_the_answer() -> None:
+    """A budget that leaves no room for the answer in the window is a configuration error."""
+    with pytest.raises(ValueError, match="MAX_CONVERSATION_TOKENS"):
+        Settings(
+            _env_file=None,
+            openai_context_window=128_000,
+            openai_max_tokens=4096,
+            max_conversation_tokens=125_000,
+        )
 
 
 def test_answer_cannot_take_the_whole_context_window() -> None:
     """An answer limit as large as the context window is a configuration error."""
     with pytest.raises(ValueError, match="OPENAI_MAX_TOKENS"):
-        Settings(_env_file=None, openai_context_window=4000, openai_max_tokens=4000)
+        Settings(
+            _env_file=None,
+            openai_context_window=4000,
+            openai_max_tokens=4000,
+            max_conversation_tokens=1,
+        )
 
 
 @pytest.mark.parametrize("key", [None, "", "   "])
@@ -108,7 +128,7 @@ def test_router_uses_the_cheap_model_deterministically(settings_with_key: Settin
     """The history router uses its own cheap model, temperature 0, tiny output."""
     model = build_router_model(settings_with_key)
 
-    assert model.model_name == "gpt-4.1-nano"
+    assert model.model_name == "gpt-4o-mini"
     assert model.temperature == 0
     assert model.max_tokens == 150
 

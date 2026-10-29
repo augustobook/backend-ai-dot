@@ -46,6 +46,20 @@ def test_ask_returns_the_model_answer(chat_service: ChatService) -> None:
     assert chat_service.ask("s1", "How do I create a list?") == "Answer 1"
 
 
+async def test_pasted_secrets_never_reach_the_model_or_the_history(
+    chat_service: ChatService, fake_model: RecordingFakeChatModel
+) -> None:
+    """The model, and the history kept for later questions, only see the placeholder."""
+    secret = "sk-proj-Xq7TESTe9KeyAbc123"
+    chat_service.ask("s1", f'client = OpenAI(api_key="{secret}") fails')
+    await chat_service.aask("s2", f"password={secret}")
+
+    sent = [message.text for messages in fake_model.received for message in messages]
+    stored = [message.text for message in chat_service.get_history("s1")]
+    assert not any(secret in text for text in sent + stored)
+    assert any("[REDACTED]" in text for text in stored)
+
+
 def test_ask_sends_system_prompt_and_question(
     chat_service: ChatService, fake_model: RecordingFakeChatModel
 ) -> None:
