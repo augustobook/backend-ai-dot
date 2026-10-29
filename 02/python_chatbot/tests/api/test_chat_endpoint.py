@@ -9,10 +9,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langchain_core.messages import HumanMessage
 
-from app.api.dependencies import get_chat_service
+from app.api.dependencies import get_chat_service, get_rate_limiter
 from app.api.main import create_app
 from app.api.schemas import MAX_MESSAGE_LENGTH
 from app.core.exceptions import MissingAPIKeyError
+from app.core.rate_limit import MINUTE, RateLimit, RateLimiter
 from app.services.chat_service import ChatService
 from tests.conftest import (
     RecordingFakeChatModel,
@@ -25,9 +26,10 @@ from tests.conftest import (
 
 @pytest.fixture
 def app(chat_service: ChatService) -> Iterator[FastAPI]:
-    """Application whose ChatService uses the fake model."""
+    """Application whose ChatService uses the fake model (no rate limit)."""
     application = create_app()
     application.dependency_overrides[get_chat_service] = lambda: chat_service
+    application.dependency_overrides[get_rate_limiter] = lambda: RateLimiter([])
     yield application
     application.dependency_overrides.clear()
 
@@ -178,6 +180,38 @@ def test_chat_returns_503_when_api_key_is_missing(app: FastAPI) -> None:
 
     assert response.status_code == 503
     assert "OPENAI_API_KEY" in response.json()["detail"]
+
+
+def test_chat_returns_429_with_retry_after_over_the_rate_limit(
+    app: FastAPI, fake_model: RecordingFakeChatModel
+) -> None:
+    """Questions above the per-client limit get 429 and never reach the model."""
+    limiter = RateLimiter([RateLimit(2, MINUTE)])
+    app.dependency_overrides[get_rate_limiter] = lambda: limiter
+    client = TestClient(app)
+
+    responses = [client.post("/chat", json={"message": "What is a list?"}) for _ in range(3)]
+
+    assert [r.status_code for r in responses] == [200, 200, 429]
+    assert 0 < int(responses[2].headers["Retry-After"]) <= MINUTE
+    assert "Too many questions" in responses[2].json()["detail"]
+    assert len(fake_model.received) == 2
+
+
+def test_rate_limit_counts_clients_behind_the_proxy_separately(app: FastAPI) -> None:
+    """Behind a private proxy, each X-Forwarded-For client has its own limit."""
+    limiter = RateLimiter([RateLimit(1, MINUTE)])
+    app.dependency_overrides[get_rate_limiter] = lambda: limiter
+    # The peer must be private for X-Forwarded-For to be trusted.
+    client = TestClient(app, client=("172.18.0.5", 50000))
+
+    def ask(ip: str) -> int:
+        headers = {"X-Forwarded-For": f"{ip}, 172.18.0.2"}
+        return client.post("/chat", json={"message": "Hi"}, headers=headers).status_code
+
+    assert ask("8.8.8.8") == 200
+    assert ask("9.9.9.9") == 200
+    assert ask("8.8.8.8") == 429
 
 
 # --- DELETE /chat/{session_id} ----------------------------------------------------

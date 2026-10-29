@@ -15,14 +15,17 @@ from app.core.exceptions import (
     LLMUnavailableError,
     MissingAPIKeyError,
     QuestionTooLongError,
+    RateLimitExceededError,
 )
 from app.services.chat_service import ChatService
 from app.ui.helpers import (
     SESSION_ID_PREFIX,
     StarterSpec,
     build_session_id,
+    client_ip_from_environ,
     format_error_message,
     format_usage_warning,
+    format_wait,
     get_starter_specs,
     steps_to_messages,
     translate_error,
@@ -155,3 +158,46 @@ def test_format_error_message_is_friendly() -> None:
     assert message.startswith("⚠️ **Desculpe")
     assert translate_error(error) in message
     assert error.user_message not in message  # the English text is not shown
+
+
+# --- Rate limit -------------------------------------------------------------------
+
+
+def test_client_ip_comes_from_the_asgi_scope_and_the_proxy_header() -> None:
+    """Socket.IO's REMOTE_ADDR is a placeholder: the scope and X-Forwarded-For count."""
+    environ = {
+        "REMOTE_ADDR": "127.0.0.1",
+        "asgi.scope": {"client": ("172.18.0.2", 41000)},
+        "HTTP_X_FORWARDED_FOR": "8.8.8.8, 172.18.0.3",
+    }
+
+    assert client_ip_from_environ(environ) == "8.8.8.8"
+
+
+def test_client_ip_without_scope_is_unknown() -> None:
+    """A connection without address information is grouped as "unknown"."""
+    assert client_ip_from_environ({}) == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [
+        (1, "1 segundo"),
+        (45, "45 segundos"),
+        (60, "1 minuto"),
+        (61, "2 minutos"),
+        (3600, "1 hora"),
+        (5 * 3600 - 10, "5 horas"),
+    ],
+)
+def test_format_wait_rounds_up_to_a_readable_unit(seconds: int, expected: str) -> None:
+    """Waiting times are shown in seconds, minutes or hours, rounded up."""
+    assert format_wait(seconds) == expected
+
+
+def test_rate_limit_error_tells_how_long_to_wait() -> None:
+    """The Portuguese message includes the waiting time."""
+    message = translate_error(RateLimitExceededError(retry_after=30))
+
+    assert "muitas perguntas" in message
+    assert "30 segundos" in message

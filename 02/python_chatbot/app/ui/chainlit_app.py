@@ -17,6 +17,7 @@ from starlette.datastructures import Headers
 from app.core.config import get_settings
 from app.core.exceptions import ChatbotError
 from app.core.logging import configure_logging
+from app.core.rate_limit import get_default_rate_limiter
 from app.core.tracing import configure_tracing
 from app.services.chat_service import get_default_chat_service
 from app.ui.helpers import (
@@ -24,6 +25,7 @@ from app.ui.helpers import (
     PUBLIC_USER_IDENTIFIER,
     SESSION_ID_KEY,
     build_session_id,
+    client_ip_from_environ,
     format_error_message,
     format_usage_warning,
     get_starter_specs,
@@ -138,13 +140,15 @@ async def on_message(message: cl.Message) -> None:
     )
 
     try:
+        # Checked first, so a refused question never reaches OpenAI.
+        get_default_rate_limiter().check(client_ip_from_environ(cl.context.session.environ))
         service = get_default_chat_service()
         async for token in service.astream(
             session_id, message.content, interface="web", callbacks=callbacks
         ):
             await reply.stream_token(token)
     except ChatbotError as exc:
-        # Missing key, invalid key, rate limit, timeout, conversation full...: show
+        # Too many questions, missing key, invalid key, timeout, conversation full...: show
         # it in the chat instead of breaking the interface.
         await cl.ErrorMessage(content=format_error_message(exc)).send()
         if reply.content:

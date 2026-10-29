@@ -7,6 +7,7 @@ The web interface is shown in Brazilian Portuguese, so the user-facing texts
 defined here (starters, error messages) are in Portuguese.
 """
 
+import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -23,7 +24,9 @@ from app.core.exceptions import (
     LLMTimeoutError,
     MissingAPIKeyError,
     QuestionTooLongError,
+    RateLimitExceededError,
 )
+from app.core.rate_limit import resolve_client_ip
 
 # Key under which the `ChatService` session id is stored in `cl.user_session`.
 SESSION_ID_KEY = "chat_session_id"
@@ -180,6 +183,43 @@ def format_usage_warning(percent: int) -> str:
     )
 
 
+def client_ip_from_environ(environ: Mapping[str, Any]) -> str:
+    """Return the visitor's IP from the environ of a Chainlit (Socket.IO) connection.
+
+    Socket.IO fills `REMOTE_ADDR` with a fixed placeholder, so the real peer is
+    read from the ASGI scope, and the client behind the proxies from
+    `X-Forwarded-For` (see `resolve_client_ip`).
+
+    Args:
+        environ: `cl.context.session.environ`.
+
+    Returns:
+        The client IP ("unknown" when the connection has no address).
+    """
+    scope = environ.get("asgi.scope") or {}
+    client = scope.get("client")
+    peer = client[0] if client else None
+    return resolve_client_ip(peer, environ.get("HTTP_X_FORWARDED_FOR"))
+
+
+def format_wait(seconds: int) -> str:
+    """Describe a waiting time in Portuguese, rounded up to a readable unit.
+
+    Args:
+        seconds: Seconds to wait.
+
+    Returns:
+        E.g. "1 segundo", "45 segundos", "3 minutos", "5 horas".
+    """
+    if seconds < 60:
+        amount, unit = seconds, "segundo"
+    elif seconds < 60 * 60:
+        amount, unit = math.ceil(seconds / 60), "minuto"
+    else:
+        amount, unit = math.ceil(seconds / 3600), "hora"
+    return f"{amount} {unit}{'' if amount == 1 else 's'}"
+
+
 def translate_error(error: ChatbotError) -> str:
     """Return the Portuguese explanation of a domain error.
 
@@ -189,6 +229,12 @@ def translate_error(error: ChatbotError) -> str:
     Returns:
         The message of the closest error class in `ERROR_MESSAGES`.
     """
+    # The only message that depends on the error instance (how long to wait).
+    if isinstance(error, RateLimitExceededError):
+        return (
+            "Você enviou muitas perguntas em pouco tempo. "
+            f"Aguarde {format_wait(error.retry_after)} e tente novamente."
+        )
     # Walk the class hierarchy so subclasses without their own text (e.g.
     # LLMUnavailableError) fall back to their parent's message.
     # `ChatbotError` is always in the hierarchy, so a message is always found.

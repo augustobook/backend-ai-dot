@@ -35,6 +35,9 @@ class Settings(BaseSettings):
         history_router_enabled: Whether a router decides, per question, if the
             conversation history is sent (False = always send it).
         history_router_model: OpenAI model used by the router (cheap and fast).
+        rate_limit_per_minute: Questions one client (IP) may ask per minute in the
+            web UI and the API (0 disables this limit).
+        rate_limit_per_day: Questions one client (IP) may ask per day (0 disables).
         log_level: Root logging level.
         chainlit_show_chain_steps: Whether the web UI shows the LangChain steps.
         chainlit_database_path: SQLite file with the web UI conversation history.
@@ -65,6 +68,11 @@ class Settings(BaseSettings):
     # Cheapest and fastest OpenAI model for a yes/no decision. A non-reasoning
     # model is preferred: reasoning models spend extra "thinking" tokens and time.
     history_router_model: str = "gpt-4.1-nano"
+
+    # --- Rate limit (per client IP; the CLI is local and never limited) -----------
+    # Every question costs OpenAI tokens, so a public deployment must bound them.
+    rate_limit_per_minute: int = Field(default=10, ge=0)
+    rate_limit_per_day: int = Field(default=100, ge=0)
 
     # --- Logging and interfaces -------------------------------------------------
     log_level: str = "INFO"

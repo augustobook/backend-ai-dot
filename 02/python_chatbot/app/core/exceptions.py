@@ -65,6 +65,27 @@ class ConversationLimitError(ChatbotError):
     status_code = 409
 
 
+class RateLimitExceededError(ChatbotError):
+    """Raised when a client asks more questions than its rate limit allows.
+
+    Attributes:
+        retry_after: Seconds until the client may ask again.
+    """
+
+    status_code = 429
+
+    def __init__(self, retry_after: int) -> None:
+        """Create the error.
+
+        Args:
+            retry_after: Seconds until the client may ask again.
+        """
+        self.retry_after = retry_after
+        super().__init__(
+            f"Too many questions in a short time. Please wait {retry_after} seconds and try again."
+        )
+
+
 class LLMError(ChatbotError):
     """Base class for failures while talking to the language model."""
 

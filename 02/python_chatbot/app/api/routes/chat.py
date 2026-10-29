@@ -5,7 +5,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Response, status
 
-from app.api.dependencies import get_chat_service
+from app.api.dependencies import enforce_rate_limit, get_chat_service
 from app.api.schemas import MAX_SESSION_ID_LENGTH, ChatRequest, ChatResponse, ErrorResponse
 from app.services.chat_service import ChatService
 
@@ -24,7 +24,10 @@ LLM_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     },
     status.HTTP_429_TOO_MANY_REQUESTS: {
         "model": ErrorResponse,
-        "description": "OpenAI rate limit or quota exceeded.",
+        "description": (
+            "Too many questions from this client (default: 10 per minute and 100 per "
+            "day per IP; see `Retry-After`), or OpenAI rate limit/quota exceeded."
+        ),
     },
     status.HTTP_503_SERVICE_UNAVAILABLE: {
         "model": ErrorResponse,
@@ -47,9 +50,13 @@ LLM_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
         "- Questions outside Python programming are politely declined.\n"
         "- The answer is written in the same language as the question.\n"
         "- `message` accepts up to 5000 characters. The whole conversation is sent to "
-        "the model; when it no longer fits in the context window, `409` is returned."
+        "the model; when it no longer fits in the context window, `409` is returned.\n"
+        "- Each client IP may ask 10 questions per minute and 100 per day; above that, "
+        "`429` is returned with a `Retry-After` header."
     ),
     responses=LLM_ERROR_RESPONSES,
+    # Checked before the service is built, so a refused question costs nothing.
+    dependencies=[Depends(enforce_rate_limit)],
 )
 async def chat(request: ChatRequest, service: ChatServiceDep) -> ChatResponse:
     """Answer a question within a conversation.
@@ -62,6 +69,7 @@ async def chat(request: ChatRequest, service: ChatServiceDep) -> ChatResponse:
         The session id (generated when missing) and the answer.
 
     Raises:
+        RateLimitExceededError: Converted to 429 by the exception handlers.
         ConversationLimitError: Converted to 409 by the exception handlers.
         LLMError: Converted to 429/503/504 by the exception handlers.
     """

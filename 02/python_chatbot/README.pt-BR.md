@@ -238,6 +238,14 @@ a chain descarta o histórico quando `use_history` é falso
   aproximado e continuam offline.
 - **Aviso aos 80%:** um toast na interface web (não salvo no histórico), uma linha amarela na
   CLI e os campos `conversation_usage_percent` / `near_conversation_limit` na resposta da API.
+- **Perguntas por cliente:** cada IP pode fazer **10 perguntas por minuto e 100 por dia**
+  (`RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_PER_DAY`; `0` desliga) na interface web e na API,
+  porque cada pergunta custa tokens da OpenAI. Acima disso, a interface web mostra quanto
+  tempo esperar e a API responde `429` com o cabeçalho `Retry-After`; perguntas recusadas
+  nunca chegam à OpenAI e não são contadas. A CLI é local e nunca é limitada. Atrás dos
+  proxies reversos (Caddy), o cliente é o endereço público mais à direita do
+  `X-Forwarded-For`, então um valor forjado pelo cliente é ignorado. Os contadores ficam em
+  memória (um processo; zeram ao reiniciar).
 
 ## Pré-requisitos
 
@@ -265,6 +273,8 @@ cp .env.example .env      # Windows (PowerShell): Copy-Item .env.example .env
 | `OPENAI_CONTEXT_WINDOW` | `128000` | Tokens que o modelo aceita por requisição (define o limite da conversa) |
 | `HISTORY_ROUTER_ENABLED` | `true` | Decide, a cada pergunta, se o histórico é enviado |
 | `HISTORY_ROUTER_MODEL` | `gpt-4.1-nano` | Modelo barato e rápido usado pelo roteador de histórico |
+| `RATE_LIMIT_PER_MINUTE` | `10` | Perguntas por IP de cliente por minuto (web e API; `0` desliga) |
+| `RATE_LIMIT_PER_DAY` | `100` | Perguntas por IP de cliente por dia (web e API; `0` desliga) |
 | `OPENAI_TIMEOUT` | `60` | Timeout da requisição (segundos) |
 | `OPENAI_MAX_RETRIES` | `2` | Novas tentativas em erros transitórios |
 | `LOG_LEVEL` | `INFO` | Nível de log |

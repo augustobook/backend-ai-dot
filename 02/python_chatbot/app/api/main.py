@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from app import __version__
 from app.api.routes import chat, health
 from app.core.config import get_settings
-from app.core.exceptions import ChatbotError
+from app.core.exceptions import ChatbotError, RateLimitExceededError
 from app.core.logging import configure_logging
 from app.core.tracing import configure_tracing
 
@@ -50,7 +50,13 @@ async def chatbot_error_handler(request: Request, exc: Exception) -> JSONRespons
         type(exc).__name__,
         exc.status_code,
     )
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.user_message})
+    # Tell rate-limited clients when they may ask again (standard HTTP header).
+    headers = (
+        {"Retry-After": str(exc.retry_after)} if isinstance(exc, RateLimitExceededError) else None
+    )
+    return JSONResponse(
+        status_code=exc.status_code, content={"detail": exc.user_message}, headers=headers
+    )
 
 
 def create_app() -> FastAPI:
