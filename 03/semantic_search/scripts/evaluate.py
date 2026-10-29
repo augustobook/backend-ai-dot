@@ -56,6 +56,11 @@ CONFIGS: dict[str, Config] = {
     "hybrid+rerank@10": Config("hybrid", rerank=True, overrides={"rerank_candidates": 10}),
     "hybrid+rerank@20": Config("hybrid", rerank=True, overrides={"rerank_candidates": 20}),
     "hybrid+rerank@30": Config("hybrid", rerank=True, overrides={"rerank_candidates": 30}),
+    "hybrid-bm25-x2+rerank@20": Config(
+        "hybrid", rerank=True, overrides={"rerank_candidates": 20, "rrf_keyword_weight": 2.0}
+    ),
+    "bm25+rerank@20": Config("keyword", rerank=True, overrides={"rerank_candidates": 20}),
+    "semantic+rerank@20": Config("semantic", rerank=True, overrides={"rerank_candidates": 20}),
     "hybrid+rewrite": Config("hybrid", rewrite=True),
     "hybrid+rewrite+rerank@20": Config(
         "hybrid", rerank=True, rewrite=True, overrides={"rerank_candidates": 20}
