@@ -1,5 +1,7 @@
 # Backend & IA
 
+[![CI](https://github.com/augustobook/backend-ai-dot/actions/workflows/ci.yml/badge.svg)](https://github.com/augustobook/backend-ai-dot/actions/workflows/ci.yml)
+
 Três projetos independentes em Python, cada um numa pasta numerada. Eles não dependem
 uns dos outros: cada um tem seu próprio `pyproject.toml` (gerenciado com
 [uv](https://docs.astral.sh/uv/)), seu `Dockerfile`, seus testes e **seu próprio
@@ -53,6 +55,7 @@ demonstração) e a API tem limite de requisições por IP.
 │   └── python_chatbot/       # Chatbot Python Tutor (CLI, web e API)
 ├── 03/
 │   └── semantic_search/      # Busca semântica híbrida (CLI e web)
+├── .github/workflows/ci.yml  # CI: lint, tipos e testes dos quatro projetos
 ├── deploy/
 │   ├── Caddyfile             # Proxy reverso: um subdomínio por projeto, HTTPS automático
 │   └── landing/index.html    # Página inicial com links para os projetos
@@ -98,8 +101,10 @@ Chatbot que responde **dúvidas sobre programação em Python** de forma didáti
 e recusa educadamente assuntos fora de Python.
 
 - Cadeia LCEL do LangChain com modelo da família GPT-4 da OpenAI (padrão `gpt-4o-mini`).
-- Memória por conversa; um modelo pequeno ("roteador") decide, a cada pergunta, se o
-  histórico precisa ser enviado. Limites medidos em tokens, com aviso aos 80%.
+- Memória por conversa, com o histórico completo enviado em cada pergunta, até 64 mil
+  tokens por conversa (aviso aos 80%).
+- Avaliação com o modelo real: comportamento (idioma, escopo, prompt injection, segredos)
+  com juiz LLM, e o roteador de histórico medido em acerto, latência e custo.
 - Três interfaces sobre o mesmo serviço: **CLI** (rich), **web** (Chainlit, com lista de
   conversas salva em SQLite) e **API REST** (FastAPI).
 - Rastreamento opcional no LangSmith.
@@ -107,7 +112,8 @@ e recusa educadamente assuntos fora de Python.
 
 README: [português](02/python_chatbot/README.pt-BR.md) ·
 [inglês](02/python_chatbot/README.md) (exemplos de respostas em
-[docs/EXAMPLES.md](02/python_chatbot/docs/EXAMPLES.md)).
+[docs/EXAMPLES.md](02/python_chatbot/docs/EXAMPLES.md); avaliação em
+[docs/EVALUATION.md](02/python_chatbot/docs/EVALUATION.md)).
 
 ## 03 — Busca semântica
 
@@ -142,6 +148,11 @@ de projeto" do README de cada projeto.
 - **SQLite em vez de Postgres.** Para um catálogo deste tamanho, um arquivo basta e não
   exige outro serviço. Ele roda com WAL, `foreign_keys=ON` e busy timeout, e a URL do
   banco é configurável.
+- **Schema versionado com Alembic.** A API aplica as migrations pendentes ao iniciar. O
+  `create_all` só cria tabelas novas e nunca altera uma existente, então uma coluna nova
+  nunca chegaria ao banco que já está no ar. Um teste falha se o modelo mudar sem a migration.
+- **Total da busca no header `X-Total-Count`.** O corpo continua sendo uma lista de livros,
+  e o cliente sabe quantas páginas existem sem buscar todas.
 - **A API é a única dona das regras.** As validações ficam nos schemas Pydantic. O
   frontend só traduz os erros `422` em mensagens em português e chama a API pelo servidor
   Python (callbacks do Dash), então a chave da API nunca chega ao navegador.
@@ -154,11 +165,16 @@ de projeto" do README de cada projeto.
 - **`gpt-4o-mini` com temperatura `0.3`.** Tem boa qualidade didática a baixo custo e
   latência. A temperatura baixa deixa as respostas consistentes, que é o que se espera
   de um tutor.
-- **Roteador de histórico.** A cada pergunta, um modelo pequeno (`gpt-4.1-nano`) decide
-  se a conversa anterior é necessária. Quando é, o histórico vai **completo**, sem
-  cortes; quando não é, economiza tokens.
-- **Limites medidos em tokens com `tiktoken`, não em mensagens.** O usuário é avisado
-  aos 80% da janela de contexto.
+- **Roteador de histórico medido e desligado por padrão.** Um roteador que decidia se o
+  histórico era necessário acertou 92% sem errar nenhum follow-up, mas acrescentava ~1 s
+  antes de toda resposta e custava mais do que economizava: 86% da entrada já vem do
+  cache da OpenAI, pela metade do preço. Ele continua disponível como opção.
+- **Limite de 64 mil tokens por conversa, medido com `tiktoken`.** É metade da janela do
+  modelo: corta pela metade o custo das últimas perguntas de uma conversa longa e mantém
+  o prompt longe da região em que o modelo perde precisão, e ainda cabem ~120 perguntas.
+- **Segredos removidos no código, não só no prompt.** A avaliação pegou o modelo colando
+  de volta uma chave de API que o usuário tinha colado. Agora a chave vira `[REDACTED]`
+  antes de chegar ao modelo, ao histórico e ao LangSmith.
 - **Um `ChatService` para três interfaces** (CLI, web e API). As interfaces só traduzem
   entrada e saída. Os erros da OpenAI viram exceções de domínio, e cada interface os
   mostra do seu jeito (mensagem amigável ou código HTTP).
@@ -209,5 +225,10 @@ uv run python -m app.ui.dash_app
 
 No Windows (PowerShell), troque `cp` por `Copy-Item`. Na primeira vez, o 03 baixa os
 modelos do Hugging Face (~1 GB), então demora alguns minutos para abrir. Os testes rodam
-sem chave e sem rede: `uv run pytest` dentro da pasta de cada projeto. O README de cada projeto traz as
+sem chave e sem rede: `uv run pytest` dentro da pasta de cada projeto.
+
+**Integração contínua:** a cada push e pull request, o GitHub Actions
+([.github/workflows/ci.yml](.github/workflows/ci.yml)) roda, em cada um dos quatro
+projetos, `ruff check`, `ruff format --check`, `mypy` em modo estrito e `pytest` com
+cobertura mínima de 90% (onde o `pyproject.toml` exige). O README de cada projeto traz as
 outras interfaces (CLI e API do 02, CLI do 03), o Docker e todas as configurações.

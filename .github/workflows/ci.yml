@@ -1,0 +1,61 @@
+# Lint, type-check and test the four Python projects on every push and pull request.
+# Each project has its own pyproject.toml and uv.lock, so each runs in its own job.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch cancels the run still in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - 01/backend
+          - 01/frontend
+          - 02/python_chatbot
+          - 03/semantic_search
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    env:
+      # The tests run offline: no OpenAI key and no model download from Hugging Face.
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.21"
+          enable-cache: true
+          cache-dependency-glob: ${{ matrix.project }}/uv.lock
+
+      - name: Install Python and dependencies
+        run: uv sync --locked
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Format (ruff)
+        run: uv run ruff format --check .
+
+      - name: Types (mypy strict)
+        run: uv run mypy .
+
+      - name: Tests with coverage
+        run: uv run pytest --cov --cov-report=term

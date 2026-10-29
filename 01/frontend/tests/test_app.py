@@ -46,7 +46,9 @@ def dash_app() -> Dash:
 @pytest.fixture
 def http(dash_app: Dash) -> FlaskClient:
     """Provide a Flask test client for the Dash server."""
-    return dash_app.server.test_client()
+    # Dash types `server` loosely, so the client comes back as Any without the annotation.
+    client: FlaskClient = dash_app.server.test_client()
+    return client
 
 
 def call_callback(
