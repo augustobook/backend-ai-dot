@@ -102,7 +102,7 @@ class Settings(BaseSettings):
     reranker_max_tokens: int = Field(default=512, gt=0)
     reranker_batch_size: int = Field(default=16, gt=0)
     rerank_enabled: bool = True
-    relevance_threshold: float = Field(default=0.3, ge=0.0, le=1.0)
+    relevance_threshold: float = Field(default=0.05, ge=0.0, le=1.0)
 
     # --- Runtime -----------------------------------------------------------------------
     device: Literal["auto", "cpu", "cuda"] = "auto"

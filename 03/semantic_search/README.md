@@ -104,7 +104,7 @@ flowchart TD
     end
 
     subgraph Keyword["Keyword retrieval (exact terms)"]
-        B["BM25 over the enriched chunk text<br/>query + rewrite + similar terms"]
+        B["BM25 over the chunk text + its LLM enrichment<br/>query + rewrite + similar terms"]
     end
 
     A --> E1 & E2 & B
@@ -114,7 +114,7 @@ flowchart TD
     B --> RRF
     RRF --> BO["Metadata boost<br/>category / content type match<br/>(raises, never filters)"]
     A -.->|categories, content types| BO
-    BO --> CE["Cross-encoder re-ranking<br/>reads 'query (rewrite)' + enriched chunk<br/>top 20 candidates"]
+    BO --> CE["Cross-encoder re-ranking<br/>reads 'query (rewrite)' + original chunk<br/>top 20 candidates"]
     CE --> G["One result per article<br/>(its best chunk)"]
     G --> T{"Cross-encoder score<br/>≥ RELEVANCE_THRESHOLD?"}
     T -->|yes| OK["Results"]
@@ -144,8 +144,9 @@ Step by step:
 5. **Boost.** Candidates whose category or content type matches the query get a share
    of their remaining score headroom (`METADATA_BOOST`). It is a boost, not a filter:
    a wrong guess of the LLM must not hide the answer.
-6. **Re-rank.** The cross-encoder reads the query (with its rewrite) together with each
-   enriched candidate and scores its relevance in [0, 1].
+6. **Re-rank.** The cross-encoder reads the query (with its rewrite) together with the
+   **original** passage of each candidate and scores its relevance in [0, 1]. It does not
+   read the LLM block: with it, it ranked 3 fewer answers first (see Evaluation).
 7. **Group and judge.** Each article appears once, with its best chunk. Results below
    `RELEVANCE_THRESHOLD` go to a collapsed "low relevance" group; when none passes, the
    page says that no confident result was found instead of presenting noise as an
@@ -172,10 +173,10 @@ flowchart LR
     L --> C["Chunker<br/>sections → paragraphs<br/>≤ 256 tokens, overlap ≤ 48"]
     C --> EN{"LLM enrichment<br/>gpt-5-nano, 8 in parallel"}
     CACHE[("data/enrichment_cache.json<br/>model + prompt + text")] <--> EN
-    EN --> T["Chunk + enrichment text<br/>(≤ 160 extra tokens)"]
+    C --> EMB["E5 embedder<br/>'passage: ' + original chunk"]
+    EN --> T["Context + similar terms + questions<br/>(≤ 160 tokens, appended for BM25 only)"]
     EN --> QS["Generated questions"]
-    T --> EMB["E5 embedder<br/>'passage: ' prefix"]
-    QS --> EMBQ["E5 embedder<br/>'query: ' prefix"]
+    QS --> EMBQ["E5 embedder<br/>'query: ' + each question"]
     EMB --> I1[("index.faiss")]
     EMBQ --> I2[("questions.faiss")]
     T --> J[("chunks.json<br/>BM25 rebuilt from it")]
@@ -186,12 +187,16 @@ What the LLM writes for every chunk (stored in `chunks.json`):
 
 | Field | Example | Used by |
 |---|---|---|
-| `context` | "Trecho sobre a alimentação no tratamento da obstipação." | embedding, BM25, cross-encoder |
-| `similar_terms` | "prisão de ventre; intestino preso; constipação" | embedding, BM25, cross-encoder |
-| `questions` (3–5, each naming its subject, since it is embedded alone) | "O que comer para aliviar a prisão de ventre (constipação)?" | **own vector** in `questions.faiss`, plus the above |
+| `context` | "Trecho sobre a alimentação no tratamento da obstipação." | BM25 |
+| `similar_terms` | "prisão de ventre; intestino preso; constipação" | BM25 |
+| `questions` (3–5, each naming its subject, since it is embedded alone) | "O que comer para aliviar a prisão de ventre (constipação)?" | **own vector** in `questions.faiss`, and BM25 |
 | `content_types` | `diet`, `treatment` | metadata boost |
 
-The text shown to the user is always the original passage. The enrichment is cached by
+The enrichment is kept **apart from the passage** wherever that measured better: the
+chunk vector and the cross-encoder use the original passage only (the cross-encoder
+lost 3 queries in 1st place reading the LLM block; the vector was the same either way),
+while BM25 indexes the passage plus the block, which is how it matches the users'
+words. The text shown to the user is always the original passage. The enrichment is cached by
 model, prompt version and chunk text, so re-running the ingestion only pays for new or
 changed chunks. The ingestion is skipped when nothing changed (dataset, models,
 chunking, enrichment); `ingest --force` rebuilds anyway.
@@ -252,6 +257,14 @@ diseases and prevention. Sources, revisions and attribution:
 [data/README.md](data/README.md). Download them again with
 `uv run python scripts/fetch_dataset.py`.
 
+**Why only 100 articles.** The collection was kept small on purpose because every
+article costs AI processing at ingestion: one LLM call per chunk for the enrichment
+(1,477 calls for these 100 articles) and, on CPU, the embedding of every chunk and of
+every generated question (7,162 extra vectors), which takes tens of minutes on the test
+machine. Both grow linearly with the collection, so thousands of articles would
+multiply the API cost and the ingestion time. 100 articles are enough to show and
+measure every technique; nothing in the pipeline limits the size.
+
 Encyclopedic content used to demonstrate information retrieval; it is not medical
 advice.
 
@@ -267,7 +280,8 @@ overridden in `.env` (see [.env.example](.env.example)). The main ones:
 | `QUERY_REWRITE_ENABLED` / `QUERY_REWRITE_MODEL` | `true` / `gpt-5-nano` | Query interpretation at search time |
 | `LLM_REASONING_EFFORT` | `minimal` | Sent only to reasoning models |
 | `METADATA_BOOST` | `0.15` | Boost for a category / content type match |
-| `RELEVANCE_THRESHOLD` | `0.3` | Cross-encoder score below which a result is "low relevance" |
+| `RELEVANCE_THRESHOLD` | `0.05` | Cross-encoder score below which a result is "low relevance"; calibrated so 96% of right answers show and off-topic questions are blocked |
+| `CHUNK_MIN_TOKENS` | `40` | Sections smaller than this are joined to a neighbor section |
 | `RERANK_CANDIDATES` | `20` | Candidates read by the cross-encoder (the slowest step on CPU); 20 matched 30 in quality at 40% less time |
 | `EMBEDDING_MODEL_NAME` | `intfloat/multilingual-e5-small` | Changing it requires `ingest --force` |
 
@@ -283,8 +297,19 @@ uv run python -m app.cli stats
 ## Evaluation
 
 60 questions written the way users write them ([data/eval/queries.json](data/eval/queries.json)),
-each with its expected article(s). Results on the 100-article index, **without** the LLM
-steps (no API key at the time), on a 2012 CPU:
+each with its expected article(s), on a 2012 CPU.
+
+With the LLM-enriched index (1,477 chunks, 7,162 generated questions), query rewrite off,
+cross-encoder with 20 candidates:
+
+| Chunk vector | Cross-encoder reads | hit@1 | hit@5 | MRR@10 |
+|---|---|---|---|---|
+| passage + LLM block | passage + LLM block | 0.73 | 0.92 | 0.806 |
+| passage + LLM block | original passage | **0.78** | 0.92 | **0.849** |
+| original passage | passage + LLM block | 0.72 | 0.92 | 0.799 |
+| **original passage (default)** | **original passage (default)** | 0.77 | **0.93** | 0.847 |
+
+First results, before the enrichment existed:
 
 | Configuration | hit@1 | hit@5 | MRR@10 | Mean latency |
 |---|---|---|---|---|
@@ -295,9 +320,9 @@ steps (no API key at the time), on a 2012 CPU:
 | **Hybrid + cross-encoder, 20 candidates (default)** | **0.77** | 0.92 | **0.840** | 10.3 s |
 | Hybrid + cross-encoder, 30 candidates | 0.75 | 0.93 | 0.834 | 17.4 s |
 
-Stemming in BM25 lowered hit@5 (0.90 → 0.83 in the hybrid search) and was removed; RRF
-weights other than 1:1 did not help. The LLM steps are not measured yet. Full results,
-decisions and caveats (in Portuguese): [docs/EVALUATION.md](docs/EVALUATION.md).
+Stemming in BM25 lowered hit@5 (0.90 → 0.83 in the hybrid search) and was removed. The
+query rewrite and the metadata boost are not measured yet. Full results, decisions and
+caveats (in Portuguese): [docs/EVALUATION.md](docs/EVALUATION.md).
 
 ```bash
 uv run python scripts/evaluate.py                  # fast configurations
@@ -316,9 +341,10 @@ uv run mypy                  # strict
 
 ## Limits and next steps
 
-- **Measure the LLM steps.** Enrichment, question index, rewrite, multi-query and the
-  metadata boost still need to be evaluated with an API key; any of them that does not
-  improve the numbers should be turned off.
+- **Measure the remaining LLM steps.** The query rewrite, the multi-query and the
+  metadata boost still need to be evaluated; any of them that does not improve the
+  numbers should be turned off. A BM25 weight of 2 in the RRF helped before the
+  cross-encoder and still has to be checked after it.
 - **The evaluation set is small** (each question is 1.7 points of hit@5) and was written
   by someone who knows the collection; real user questions would make it more reliable.
 - **The cross-encoder dominates the latency on CPU** (about 10 s per query on the test

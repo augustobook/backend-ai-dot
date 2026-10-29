@@ -26,6 +26,10 @@ from app.vector_store.faiss_store import INDEX_FILE_NAME, FaissVectorStore
 
 logger = logging.getLogger(__name__)
 
+# Bump when what goes into the indexes changes (not the chunking itself).
+# v2: chunk vectors embed the original passage only, without the LLM enrichment.
+INDEX_VERSION = "2"
+
 IngestionStage = Literal["enrich", "embed", "questions"]
 """Stages that report progress: LLM enrichment, chunk embedding, question embedding."""
 
@@ -140,11 +144,12 @@ class IndexingService:
                 time.perf_counter() - step,
             )
 
-        # 4. Embed the chunks in batches: title + passage, plus the enrichment when
-        #    there is one. Document metadata (URL, license...) is never embedded.
+        # 4. Embed the chunks in batches: title + passage only. The enrichment is kept
+        #    apart: its questions get vectors of their own (step 6) and its similar
+        #    terms go to BM25. Document metadata (URL, license...) is never embedded.
         step = time.perf_counter()
         vectors = embedder.embed_documents(
-            [chunk.search_text for chunk in chunks],
+            [chunk.text for chunk in chunks],
             progress=_counter("embed", len(chunks), progress),
         )
         logger.info("Embedded %d chunks in %.2fs", len(chunks), time.perf_counter() - step)
@@ -181,6 +186,7 @@ class IndexingService:
             chunk_overlap_tokens=settings.chunk_overlap_tokens,
             chunk_min_tokens=settings.chunk_min_tokens,
             chunker_version=CHUNKER_VERSION,
+            index_version=INDEX_VERSION,
             dataset_hash=dataset_hash,
             created_at=datetime.now(UTC),
             enrichment_model=enricher.model_name if enricher is not None else None,
@@ -237,6 +243,7 @@ class IndexingService:
             and manifest.chunk_overlap_tokens == settings.chunk_overlap_tokens
             and manifest.chunk_min_tokens == settings.chunk_min_tokens
             and manifest.chunker_version == CHUNKER_VERSION
+            and manifest.index_version == INDEX_VERSION
             and (settings.storage_dir / INDEX_FILE_NAME).is_file()
         )
 

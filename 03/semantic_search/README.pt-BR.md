@@ -103,7 +103,7 @@ flowchart TD
     end
 
     subgraph Palavras["Busca por palavras-chave (termos exatos)"]
-        B["BM25 sobre o texto enriquecido<br/>pergunta + reescrita + termos semelhantes"]
+        B["BM25 sobre o trecho + o enriquecimento da LLM<br/>pergunta + reescrita + termos semelhantes"]
     end
 
     A --> E1 & E2 & B
@@ -113,7 +113,7 @@ flowchart TD
     B --> RRF
     RRF --> BO["Reforço por metadados<br/>categoria / tipo de conteúdo iguais<br/>(sobe, nunca filtra)"]
     A -.->|categorias, tipos de conteúdo| BO
-    BO --> CE["Reordenação pelo cross-encoder<br/>lê 'pergunta (reescrita)' + trecho enriquecido<br/>20 melhores candidatos"]
+    BO --> CE["Reordenação pelo cross-encoder<br/>lê 'pergunta (reescrita)' + trecho original<br/>20 melhores candidatos"]
     CE --> G["Um resultado por artigo<br/>(o seu melhor trecho)"]
     G --> T{"Nota do cross-encoder<br/>≥ RELEVANCE_THRESHOLD?"}
     T -->|sim| OK["Resultados"]
@@ -143,8 +143,9 @@ Passo a passo:
 5. **Reforçar.** Candidatos cuja categoria ou tipo de conteúdo combinam com a pergunta
    ganham uma parte da folga que falta para a nota máxima (`METADATA_BOOST`). É um
    reforço, não um filtro: um palpite errado da LLM não pode esconder a resposta.
-6. **Reordenar.** O cross-encoder lê a pergunta (com a reescrita) junto com cada
-   candidato enriquecido e dá uma nota de relevância entre 0 e 1.
+6. **Reordenar.** O cross-encoder lê a pergunta (com a reescrita) junto com o trecho
+   **original** de cada candidato e dá uma nota de relevância entre 0 e 1. Ele não lê o
+   bloco da LLM: com o bloco, acertou 3 respostas a menos em 1º lugar (veja Avaliação).
 7. **Agrupar e julgar.** Cada artigo aparece uma vez, com o seu melhor trecho. Os
    resultados abaixo de `RELEVANCE_THRESHOLD` vão para um grupo recolhido de "baixa
    relevância". Quando nenhum passa do limite, a página diz que não há resultado
@@ -171,10 +172,10 @@ flowchart LR
     L --> C["Chunker<br/>seções → parágrafos<br/>≤ 256 tokens, sobreposição ≤ 48"]
     C --> EN{"Enriquecimento pela LLM<br/>gpt-5-nano, 8 em paralelo"}
     CACHE[("data/enrichment_cache.json<br/>modelo + prompt + texto")] <--> EN
-    EN --> T["Trecho + texto do enriquecimento<br/>(≤ 160 tokens extras)"]
+    C --> EMB["Embedder E5<br/>'passage: ' + trecho original"]
+    EN --> T["Contexto + termos semelhantes + perguntas<br/>(≤ 160 tokens, anexados só para o BM25)"]
     EN --> QS["Perguntas geradas"]
-    T --> EMB["Embedder E5<br/>prefixo 'passage: '"]
-    QS --> EMBQ["Embedder E5<br/>prefixo 'query: '"]
+    QS --> EMBQ["Embedder E5<br/>'query: ' + cada pergunta"]
     EMB --> I1[("index.faiss")]
     EMBQ --> I2[("questions.faiss")]
     T --> J[("chunks.json<br/>o BM25 é refeito a partir dele")]
@@ -185,10 +186,15 @@ O que a LLM escreve para cada trecho (guardado em `chunks.json`):
 
 | Campo | Exemplo | Usado por |
 |---|---|---|
-| `context` | "Trecho sobre a alimentação no tratamento da obstipação." | embedding, BM25, cross-encoder |
-| `similar_terms` | "prisão de ventre; intestino preso; constipação" | embedding, BM25, cross-encoder |
-| `questions` (3 a 5, cada uma citando o assunto, pois é vetorizada sozinha) | "O que comer para aliviar a prisão de ventre (constipação)?" | **vetor próprio** em `questions.faiss`, além dos anteriores |
+| `context` | "Trecho sobre a alimentação no tratamento da obstipação." | BM25 |
+| `similar_terms` | "prisão de ventre; intestino preso; constipação" | BM25 |
+| `questions` (3 a 5, cada uma citando o assunto, pois é vetorizada sozinha) | "O que comer para aliviar a prisão de ventre (constipação)?" | **vetor próprio** em `questions.faiss`, e BM25 |
 | `content_types` | `diet`, `treatment` | reforço por metadados |
+
+O enriquecimento fica **separado do trecho** onde isso mediu melhor: o vetor do trecho
+e o cross-encoder usam só o texto original (o cross-encoder perdeu 3 acertos em 1º lugar
+lendo o bloco da LLM; o vetor deu o mesmo resultado nas duas formas), enquanto o BM25
+indexa o trecho mais o bloco, e é assim que ele casa com as palavras do usuário.
 
 O texto mostrado ao usuário é sempre o trecho original. O enriquecimento fica em cache
 por modelo, versão do prompt e texto do trecho, então rodar a ingestão de novo só paga
@@ -251,6 +257,14 @@ nutrição, saúde mental, sono e atividade física, doenças crônicas, doença
 e prevenção. Fontes, revisões e atribuição: [data/README.md](data/README.md). Para
 baixá-los de novo: `uv run python scripts/fetch_dataset.py`.
 
+**Por que só 100 artigos.** O acervo foi mantido pequeno de propósito, porque cada
+artigo custa processamento com IA na ingestão: uma chamada à LLM por trecho para o
+enriquecimento (1.477 chamadas para estes 100 artigos) e, em CPU, a vetorização de cada
+trecho e de cada pergunta gerada (7.162 vetores a mais), que leva dezenas de minutos na
+máquina de teste. Os dois crescem na mesma proporção do acervo, então milhares de
+artigos multiplicariam o custo da API e o tempo de ingestão. 100 artigos bastam para
+mostrar e medir cada técnica; nada no pipeline limita o tamanho.
+
 Conteúdo enciclopédico usado para demonstrar busca de informação; não é orientação
 médica.
 
@@ -266,7 +280,8 @@ trocada no `.env` (veja o [.env.example](.env.example)). As principais:
 | `QUERY_REWRITE_ENABLED` / `QUERY_REWRITE_MODEL` | `true` / `gpt-5-nano` | Interpretação da pergunta na busca |
 | `LLM_REASONING_EFFORT` | `minimal` | Enviado só a modelos de raciocínio |
 | `METADATA_BOOST` | `0.15` | Reforço quando categoria / tipo de conteúdo combinam |
-| `RELEVANCE_THRESHOLD` | `0.3` | Nota do cross-encoder abaixo da qual o resultado é "baixa relevância" |
+| `RELEVANCE_THRESHOLD` | `0.05` | Nota do cross-encoder abaixo da qual o resultado é "baixa relevância"; calibrado para exibir 96% das respostas certas e bloquear perguntas fora do assunto |
+| `CHUNK_MIN_TOKENS` | `40` | Seções menores que isso são unidas a uma seção vizinha |
 | `RERANK_CANDIDATES` | `20` | Candidatos lidos pelo cross-encoder (a etapa mais lenta em CPU); 20 empatou com 30 em qualidade, com 40% menos tempo |
 | `EMBEDDING_MODEL_NAME` | `intfloat/multilingual-e5-small` | Trocar exige `ingest --force` |
 
@@ -282,8 +297,19 @@ uv run python -m app.cli stats
 ## Avaliação
 
 60 perguntas escritas como os usuários escrevem ([data/eval/queries.json](data/eval/queries.json)),
-cada uma com o(s) artigo(s) esperado(s). Resultados no índice de 100 artigos, **sem** as
-etapas com LLM (não havia chave na hora), numa CPU de 2012:
+cada uma com o(s) artigo(s) esperado(s), numa CPU de 2012.
+
+Com o índice enriquecido pela LLM (1.477 trechos, 7.162 perguntas geradas), reescrita da
+pergunta desligada e cross-encoder com 20 candidatos:
+
+| Vetor do trecho | Cross-encoder lê | hit@1 | hit@5 | MRR@10 |
+|---|---|---|---|---|
+| trecho + bloco da LLM | trecho + bloco da LLM | 0,73 | 0,92 | 0,806 |
+| trecho + bloco da LLM | trecho original | **0,78** | 0,92 | **0,849** |
+| trecho original | trecho + bloco da LLM | 0,72 | 0,92 | 0,799 |
+| **trecho original (padrão)** | **trecho original (padrão)** | 0,77 | **0,93** | 0,847 |
+
+Primeiros resultados, antes de existir o enriquecimento:
 
 | Configuração | hit@1 | hit@5 | MRR@10 | Latência média |
 |---|---|---|---|---|
@@ -294,8 +320,8 @@ etapas com LLM (não havia chave na hora), numa CPU de 2012:
 | **Híbrida + cross-encoder, 20 candidatos (padrão)** | **0,77** | 0,92 | **0,840** | 10,3 s |
 | Híbrida + cross-encoder, 30 candidatos | 0,75 | 0,93 | 0,834 | 17,4 s |
 
-O stemming no BM25 baixou o hit@5 (0,90 → 0,83 na busca híbrida) e foi removido; pesos do
-RRF diferentes de 1:1 não ajudaram. As etapas com LLM ainda não foram medidas.
+O stemming no BM25 baixou o hit@5 (0,90 → 0,83 na busca híbrida) e foi removido. A
+reescrita da pergunta e o reforço por metadados ainda não foram medidos.
 Resultados completos, decisões e ressalvas: [docs/EVALUATION.md](docs/EVALUATION.md).
 
 ```bash
@@ -315,9 +341,10 @@ uv run mypy                  # modo estrito
 
 ## Limites e próximos passos
 
-- **Medir as etapas com LLM.** Enriquecimento, índice de perguntas, reescrita,
-  multi-query e reforço por metadados ainda precisam ser avaliados com a chave da API;
-  o que não melhorar os números deve ser desligado.
+- **Medir as etapas com LLM que faltam.** A reescrita da pergunta, o multi-query e o
+  reforço por metadados ainda precisam ser avaliados; o que não melhorar os números deve
+  ser desligado. Peso 2 para o BM25 no RRF ajudou antes do cross-encoder e ainda precisa
+  ser conferido depois dele.
 - **O conjunto de avaliação é pequeno** (cada pergunta vale 1,7 ponto de hit@5) e foi
   escrito por quem conhece o acervo; perguntas reais de usuários o tornariam mais
   confiável.

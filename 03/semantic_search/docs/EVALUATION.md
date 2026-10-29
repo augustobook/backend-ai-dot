@@ -24,7 +24,7 @@ uv run python scripts/evaluate.py --misses \
 - O código ([app/evaluation.py](../app/evaluation.py)) não depende do assunto: para outro
   acervo, basta escrever outro arquivo de perguntas.
 
-## Resultados (29/10/2026)
+## Resultados sem LLM (29/10/2026, manhã)
 
 Índice com 100 artigos e 1.525 trechos, **sem enriquecimento pela LLM** e sem reescrita
 da pergunta (não havia chave da OpenAI). CPU Intel de 2012 sem AVX2, PyTorch com 2
@@ -48,6 +48,72 @@ Experimento descartado (mesmo conjunto, mesmo índice):
 | BM25 com stemming (Snowball) | 0,60 | 0,77 | 0,684 |
 | Híbrida com stemming | 0,57 | 0,83 | 0,691 |
 
+## Resultados com o índice enriquecido (29/10/2026, tarde)
+
+Índice com 1.477 trechos (caminho de títulos, seções pequenas unidas), **enriquecido
+pelo `gpt-5-nano`** (contexto, termos semelhantes e 7.162 perguntas geradas). Reescrita
+da pergunta **desligada** em todas as medições abaixo, para isolar cada etapa.
+
+### Cada etapa
+
+| Configuração | hit@1 | hit@5 | MRR@10 |
+|---|---|---|---|
+| BM25 | 0,70 | 0,88 | 0,786 |
+| Semântica | 0,57 | 0,85 | 0,676 |
+| Híbrida (RRF 1:1) | 0,63 | 0,90 | 0,750 |
+| Híbrida, BM25 com peso 2 | 0,70 | 0,88 | 0,786 |
+| Híbrida, BM25 com peso 3 | 0,68 | 0,88 | 0,781 |
+
+O enriquecimento fortaleceu muito o BM25 (hit@1 0,63 → 0,70), porque os termos
+semelhantes e as perguntas geradas trazem as palavras dos usuários. Com isso, a fusão
+1:1 passou a puxar o 1º lugar para baixo (0,70 → 0,63), e só ganha uma pergunta no top 5.
+Peso 2 para o BM25 recupera o topo **antes** do cross-encoder; ainda falta medir se o
+ganho continua **depois** dele, que é o que aparece na tela.
+
+### Texto juntado × independente
+
+O bloco escrito pela LLM ("Contexto: … Termos semelhantes: … Perguntas: …") era
+anexado ao trecho e usado em três lugares: vetor do trecho, BM25 e cross-encoder. O
+BM25 continua usando o texto juntado; o vetor e o cross-encoder foram testados com e
+sem o bloco (híbrida 1:1 + cross-encoder com 20 candidatos):
+
+| Vetor do trecho | Cross-encoder lê | hit@1 | hit@5 | MRR@10 |
+|---|---|---|---|---|
+| trecho + bloco | trecho + bloco | 0,73 | 0,92 | 0,806 |
+| trecho + bloco | trecho original | **0,78** | 0,92 | **0,849** |
+| trecho original | trecho + bloco | 0,72 | 0,92 | 0,799 |
+| **trecho original** | **trecho original** | 0,77 | **0,93** | 0,847 |
+
+- **Cross-encoder:** lendo só o trecho original, acerta 3 perguntas a mais em 1º lugar,
+  com qualquer versão do vetor (e o resultado se repetiu em duas medições). Um texto
+  "Contexto: … Termos: … Perguntas: …" não se parece com os pares pergunta → trecho
+  com que o modelo foi treinado.
+- **Vetor do trecho:** empate (diferenças de uma pergunta). As perguntas geradas já têm
+  vetores próprios no `questions.faiss`, então colá-las no vetor do trecho não acrescenta.
+
+### Calibração do limite de relevância
+
+Nota do cross-encoder (lendo o trecho original) para o 1º resultado: nas 47 perguntas
+em que ele está certo, e em 10 perguntas **fora do acervo** ("como trocar o pneu do
+carro", "receita de bolo de chocolate", "como declarar o imposto de renda",
+"how to fix a flat tire"...):
+
+| | mínima | mediana | máxima |
+|---|---|---|---|
+| 1º resultado certo | 0,026 | 0,486 | 1,000 |
+| Pergunta fora do acervo | 0,000 | 0,014 | 0,036 |
+
+| Limite | Respostas certas exibidas | Perguntas fora do acervo bloqueadas |
+|---|---|---|
+| 0,30 (antigo) | 64% | 100% |
+| 0,10 | 83% | 100% |
+| **0,05 (novo padrão)** | **96%** | **100%** |
+| 0,03 | 98% | 90% |
+
+Com 0,3, um terço das respostas certas aparecia como "baixa relevância". Era o caso de
+"tristeza profunda que não passa": Transtorno depressivo maior em 1º lugar, com nota
+0,026, e a tela dizendo "Nenhum resultado confiável".
+
 ## Decisões
 
 | Técnica | Resultado | Decisão |
@@ -59,6 +125,10 @@ Experimento descartado (mesmo conjunto, mesmo índice):
 | Stemming no BM25 | hit@5 cai 0,85 → 0,77 (BM25) e 0,90 → 0,83 (híbrida) | **Removido** |
 | Cross-encoder quantizado (int8) | sem ganho de velocidade nem de memória nesta CPU, e as notas mudaram até 0,09 | **Não implementado** |
 | `multilingual-e5-base` no lugar do e5-small | ~10× mais lento por pergunta, 1,9 GB, e não resolveu o vocabulário popular | **Descartado** |
+| Cross-encoder lendo o bloco da LLM | hit@1 0,78 → 0,73 e MRR 0,849 → 0,806 | **Passou a ler só o trecho original** |
+| Vetor do trecho com o bloco da LLM | empate com o trecho original | **Só o trecho original** (separação mais limpa; as perguntas já têm vetor próprio) |
+| Limite de relevância 0,3 | exibia só 64% das respostas certas | **Passou para 0,05** (96% exibidas, 100% fora do acervo bloqueadas) |
+| Caminho de títulos, sem trechos só de título | 35 trechos eram uma palavra ("Causas") | **Corrigido** (correção de bug; não depende de métrica) |
 
 Por que o stemming piorou: num acervo pequeno, reduzir as palavras ao radical junta
 palavras demais ("comer" e "coma" viram `com`), e as palavras comuns da pergunta
@@ -66,35 +136,29 @@ passam a casar com muito mais trechos.
 
 ## O que ainda erra
 
-A melhor configuração (híbrida + cross-encoder com 20 candidatos) erra 5 perguntas no
-top 5. Todas são de vocabulário popular que nenhum artigo usa:
+Com o índice enriquecido (medição com o cross-encoder ainda lendo o bloco), as perguntas
+que continuam fora do top 5 são de vocabulário popular que nenhum artigo nem o
+enriquecimento cobriram:
 
-| Pergunta | Esperado | Veio em 1º |
-|---|---|---|
-| rosto torto e fala enrolada de repente | AVC (`chr-04`) | Fibromialgia |
-| ardência ao fazer xixi | Infecção urinária (`inf-18`) | Higiene do sono |
-| beber demais todo dia e não conseguir parar | Alcoolismo (`men-15`) | Privação de sono |
-| dor no corpo todo e cansaço sem causa aparente | Fibromialgia (`chr-19`), 6º lugar | AVC |
-| pegar no sono de dia sem conseguir evitar | Narcolepsia (`act-13`) | Privação de sono |
+| Pergunta | Esperado |
+|---|---|
+| rosto torto e fala enrolada de repente | AVC (`chr-04`) |
+| ardência ao fazer xixi | Infecção urinária (`inf-18`) |
+| mania de conferir a porta e lavar as mãos várias vezes | TOC (`men-11`) |
+| sal faz mal para o coração? | Sódio (`nut-10`) / Hipertensão (`chr-01`) |
+| pegar no sono de dia sem conseguir evitar | Narcolepsia (`act-13`) |
 
-São exatamente os casos que o enriquecimento (termos semelhantes e perguntas geradas) e
-a reescrita da pergunta pela LLM foram feitos para resolver.
+São os casos que a reescrita da pergunta pela LLM foi feita para resolver.
 
 ## Ainda não medido
 
-Sem `OPENAI_API_KEY`, nada que depende da LLM foi avaliado:
-
-- enriquecimento dos trechos (contexto, termos semelhantes, perguntas geradas);
-- índice de perguntas;
-- reescrita da pergunta e multi-query;
-- reforço por metadados.
-
-Para medir: ponha a chave no `.env`, rode `uv run python -m app.cli ingest` (com
-enriquecimento) e depois
-
-```bash
-uv run python scripts/evaluate.py --configs hybrid,hybrid+rerank@20,hybrid+rewrite,hybrid+rewrite+rerank@20
-```
+- **Reescrita da pergunta e multi-query:** precisam de chamadas à LLM durante a
+  avaliação (`--configs hybrid+rewrite,hybrid+rewrite+rerank@20`).
+- **Reforço por metadados:** só age com a reescrita ligada.
+- **Peso 2 para o BM25 no RRF junto com o cross-encoder** lendo o trecho original.
+- **Junção de seções pequenas (`CHUNK_MIN_TOKENS`) isolada:** a correção do caminho de
+  títulos e a junção entraram juntas no índice novo. Medir 40 contra 0 exige duas
+  reindexações.
 
 Pela regra deste documento, cada uma dessas peças que não melhorar os números deve ser
 desligada ou removida.

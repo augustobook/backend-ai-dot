@@ -14,7 +14,7 @@ from app.services.artifacts import (
     MANIFEST_FILE_NAME,
     load_artifacts,
 )
-from app.services.indexing_service import IndexingService
+from app.services.indexing_service import INDEX_VERSION, IndexingService
 from app.vector_store.faiss_store import INDEX_FILE_NAME, QUESTIONS_INDEX_FILE_NAME
 from tests.fakes import FAKE_DIMENSION, FakeEmbedder, FakeEnricher
 
@@ -123,6 +123,14 @@ def test_a_new_chunker_version_triggers_a_rebuild(
     path = settings.storage_dir / MANIFEST_FILE_NAME
     stored = json.loads(path.read_text(encoding="utf-8"))
     stored["chunker_version"] = "1"
+    path.write_text(json.dumps(stored), encoding="utf-8")
+
+    assert indexing_service.ingest().skipped is False
+
+    # The same holds for what goes into the indexes (e.g. what the chunk vectors embed).
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    assert stored["index_version"] == INDEX_VERSION
+    stored["index_version"] = "1"
     path.write_text(json.dumps(stored), encoding="utf-8")
 
     assert indexing_service.ingest().skipped is False

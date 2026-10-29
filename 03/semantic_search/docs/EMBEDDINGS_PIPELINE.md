@@ -16,9 +16,9 @@ flowchart LR
     B --> C["Chunker<br/>seções → parágrafos<br/>≤ 256 tokens, sobreposição ≤ 48"]
     C --> L{"Enriquecimento pela LLM<br/>(opcional)<br/>contexto · termos semelhantes<br/>perguntas · tipos de conteúdo"}
     K[("data/enrichment_cache.json")] <--> L
-    L --> T["Texto de busca<br/>trecho + enriquecimento"]
+    C --> D["Embedder<br/>multilingual-e5-small<br/>'passage: ' + trecho original<br/>mean pooling + L2"]
+    L --> T["Texto para o BM25<br/>trecho + bloco da LLM"]
     L --> Q["Perguntas geradas"]
-    T --> D["Embedder<br/>multilingual-e5-small<br/>'passage: ' + mean pooling + L2"]
     Q --> DQ["Embedder<br/>'query: ' + mean pooling + L2"]
     D --> E[("index.faiss<br/>um vetor por trecho")]
     DQ --> EQ[("questions.faiss<br/>um vetor por pergunta")]
@@ -29,9 +29,9 @@ flowchart LR
 | Etapa | Código | Resultado neste dataset |
 |---|---|---|
 | Carregar | [`app/ingestion/loader.py`](../app/ingestion/loader.py) | 100 documentos validados |
-| Dividir | [`app/ingestion/chunker.py`](../app/ingestion/chunker.py) | 1.525 trechos, em 2,8 s |
+| Dividir | [`app/ingestion/chunker.py`](../app/ingestion/chunker.py) | 1.477 trechos |
 | Enriquecer | [`app/llm/enrichment.py`](../app/llm/enrichment.py) | contexto, 3 a 5 perguntas, termos semelhantes e tipos de conteúdo por trecho (só com `OPENAI_API_KEY`) |
-| Vetorizar | [`app/embeddings/transformers_embedder.py`](../app/embeddings/transformers_embedder.py) | matriz 1.525 × 384 em float32, mais um vetor por pergunta gerada |
+| Vetorizar | [`app/embeddings/transformers_embedder.py`](../app/embeddings/transformers_embedder.py) | matriz 1.477 × 384 em float32 (só o trecho original), mais 7.162 vetores de perguntas geradas |
 | Guardar | [`app/vector_store/faiss_store.py`](../app/vector_store/faiss_store.py), [`app/services/artifacts.py`](../app/services/artifacts.py) | artefatos em `storage/` |
 | Orquestrar | [`app/services/indexing_service.py`](../app/services/indexing_service.py) | execução idempotente, manifesto |
 
@@ -84,16 +84,25 @@ todos os documentos. Ele permite à ingestão perceber quando nada mudou
 O chunker respeita as seções do Markdown ([`MarkdownChunker`](../app/ingestion/chunker.py)):
 
 1. **Divide por seções, depois por parágrafos.** Cada título Markdown (`##` a `######`)
-   começa uma seção nova. Dentro dela, linhas em branco separam os parágrafos. O título
-   da seção fica colado ao primeiro parágrafo, então o trecho mantém o rótulo do seu
-   subtema (por exemplo, `Causas`). Blocos de código cercados ficam inteiros.
-2. **Junta parágrafos até o limite de tokens.** Parágrafos seguidos da mesma seção vão
-   entrando no trecho atual enquanto couberem. **Um trecho nunca atravessa o limite de
-   uma seção**, então cada trecho fica num só subtema.
-3. **Trata parágrafos grandes demais.** Um parágrafo maior que o limite sozinho é
+   começa uma seção nova. Dentro dela, linhas em branco separam os parágrafos. O
+   **caminho de títulos** da seção fica colado ao primeiro parágrafo: um `### Virologia`
+   dentro de `## Causas` vira `Causas > Virologia`, então o trecho sabe de qual subtema
+   e de qual tema pai ele é. Blocos de código cercados ficam inteiros.
+2. **Nenhum título fica sozinho.** Um título sem texto embaixo (no artigo da Dengue,
+   `## Causas` é seguido direto por `### Virologia`) não vira trecho: ele só sobrevive
+   no caminho dos subtítulos. Antes dessa regra, 35 trechos eram só um título
+   ("Causas", "História", "Diagnóstico"...), e um deles chegou a ser o 1º resultado de
+   uma busca, mostrando apenas a palavra "Causas".
+3. **Junta seções pequenas demais.** Uma seção com menos de `CHUNK_MIN_TOKENS` (40) é
+   unida à seção seguinte (ou à anterior, se for a última), desde que as duas caibam no
+   limite. Um trecho de 20 tokens dá um vetor fraco. Cada seção unida mantém o próprio
+   rótulo. Fora dessas junções, **um trecho nunca atravessa o limite de uma seção**.
+4. **Junta parágrafos até o limite de tokens.** Parágrafos seguidos da mesma seção vão
+   entrando no trecho atual enquanto couberem.
+5. **Trata parágrafos grandes demais.** Um parágrafo maior que o limite sozinho é
    dividido por frases, depois por palavras e, em último caso, por caracteres. Um bloco
    de código só é dividido por linhas se sozinho passar do limite.
-4. **Coloca o título do artigo no início de cada trecho.** O texto de cada trecho é
+6. **Coloca o título do artigo no início de cada trecho.** O texto de cada trecho é
    `"<título do artigo>\n\n<trecho>"`. Sem isso, um trecho do meio de um artigo perderia
    o assunto: uma lista com "apneia do sono, asma, DPOC" significa uma coisa dentro de
    "Insônia" e outra dentro de "Asma".
@@ -104,6 +113,7 @@ O chunker respeita as seções do Markdown ([`MarkdownChunker`](../app/ingestion
 |---|---|---|
 | `CHUNK_MAX_TOKENS` | **256** | Metade da janela do modelo. Pequeno o bastante para um subtema e um vetor nítido, grande o bastante para uma ideia completa. |
 | `CHUNK_OVERLAP_TOKENS` | **48** | Cerca de 19% de um trecho: duas ou três frases de contexto. |
+| `CHUNK_MIN_TOKENS` | **40** | Seções menores são unidas a uma vizinha; 0 desliga a junção. |
 | `ENRICHMENT_MAX_TOKENS` | **160** | Espaço para o enriquecimento acrescentado ao trecho ([seção 4](#4-enriquecimento-pela-llm)). |
 | `EMBEDDING_MAX_TOKENS` | 512 | A janela do modelo. |
 | Margem de segurança | 16 | Reservada aos tokens especiais e ao prefixo `passage: `. |
@@ -173,10 +183,11 @@ a partir de `chunks.json` ao carregar o índice.
 | Métrica | Valor |
 |---|---|
 | Documentos | 100 |
-| Trechos | 1.525 (de 2 a 24 por documento) |
-| Tokens por trecho | média 170, máximo 256 (nenhum acima do orçamento) |
-| Maior entrada vista pelo modelo, sem enriquecimento (`passage: ` + tokens especiais) | 260 de 512 |
-| Tempo de chunking | 2,8 s |
+| Trechos | 1.477 (de 2 a 23 por documento) |
+| Tokens por trecho | média 176, mínimo 21, máximo 256 (nenhum acima do orçamento) |
+| Trechos que são só um título | **0** (eram 35 antes do caminho de títulos) |
+| Trechos com menos de 40 tokens de texto | 4 (eram 59), quando juntar não cabia no limite |
+| Maior entrada vista pelo modelo (`passage: ` + tokens especiais) | 260 de 512 |
 
 ## 4. Enriquecimento pela LLM
 
@@ -218,18 +229,24 @@ flowchart LR
     EN --> QU["questions"]
     EN --> TY["content_types"]
 
-    CT & ST & QU --> TXT["Texto de busca<br/>= trecho + 'Contexto: … Termos semelhantes: … Perguntas: …'<br/>(≤ 160 tokens extras)"]
-    TXT --> V1["Vetor do trecho<br/>index.faiss"]
+    CT & ST & QU --> TXT["Texto do BM25<br/>= trecho + 'Contexto: … Termos semelhantes: … Perguntas: …'<br/>(≤ 160 tokens extras)"]
     TXT --> BM["Índice BM25"]
-    TXT --> CE["Texto lido pelo cross-encoder"]
     QU --> V2["Um vetor por pergunta<br/>questions.faiss"]
+    OR["Trecho original"] --> V1["Vetor do trecho<br/>index.faiss"]
+    OR --> CE["Texto lido pelo cross-encoder"]
     TY --> BO["Reforço por metadados<br/>na busca"]
 ```
 
-- **Texto de busca.** Contexto, termos semelhantes e perguntas são escritos como um
-  pequeno bloco (`Chunk.enrichment_text`) e acrescentados ao trecho, formando o
-  `Chunk.search_text`. É ele que é vetorizado, indexado pelo BM25 e lido pelo
-  cross-encoder. O texto **mostrado ao usuário** continua sendo o trecho original.
+- **Só o BM25 lê o trecho junto com o bloco.** Contexto, termos semelhantes e
+  perguntas são escritos como um pequeno bloco (`Chunk.enrichment_text`) e acrescentados
+  ao trecho, formando o `Chunk.search_text`, que **só o BM25** indexa: é assim que
+  "prisão de ventre" casa com um artigo que só diz "obstipação".
+- **O vetor do trecho e o cross-encoder usam o trecho original**, sem o bloco. Isso foi
+  medido: lendo o bloco, o cross-encoder acertou 3 respostas a menos em 1º lugar (MRR
+  0,806 contra 0,849), porque um texto "Contexto: … Termos: … Perguntas: …" não se
+  parece com o que ele viu no treino; no vetor, as duas formas empataram, e as perguntas
+  já têm vetores próprios (veja [EVALUATION.md](EVALUATION.md)). O texto **mostrado ao
+  usuário** é sempre o trecho original.
 - **Orçamento.** O bloco precisa caber em `ENRICHMENT_MAX_TOKENS` (160), contados com o
   tokenizer do E5. Quando não cabe, o último item da lista mais longa (termos ou
   perguntas) sai até caber; o contexto é o último a sair. Uma pergunta cortada daqui
@@ -286,7 +303,7 @@ São poucos exemplos escritos à mão; mostram a tendência, não medem o ganho 
 - Se algumas chamadas falharem, a ingestão para com erro, mas o que já foi pago fica no
   cache: a próxima execução só pede os trechos que faltaram. Um índice com parte dos
   trechos sem enriquecimento nunca é gravado em silêncio.
-- Para os ~1.525 trechos, o custo estimado com `gpt-5-nano` fica bem abaixo de
+- Para os ~1.477 trechos, o custo estimado com `gpt-5-nano` fica bem abaixo de
   US$ 0,50, pago uma vez.
 
 ## 5. Criando os embeddings
@@ -331,7 +348,7 @@ Para cada lote de textos
 1. **Prefixo.** O E5 foi treinado com `passage: ` antes dos textos indexados e `query: `
    antes das perguntas. Sem eles, a qualidade da busca cai de forma mensurável, então
    os dois são acrescentados automaticamente para modelos da família E5. Os trechos
-   (com o enriquecimento) recebem `passage: `; as perguntas geradas e a pergunta do
+   (só o texto original) recebem `passage: `; as perguntas geradas e a pergunta do
    usuário recebem `query: `.
 2. **Ordena por tamanho e agrupa.** Os textos são ordenados por tamanho antes de formar
    lotes de 32 (`EMBEDDING_BATCH_SIZE`). Cada lote é completado (padding) até o seu
@@ -370,7 +387,7 @@ threads da CPU pode ser limitado com `TORCH_NUM_THREADS`, útil em containers.
 |---|---|
 | RAM com o modelo carregado | ~0,9 GB |
 | RAM do processo de busca (embedder + cross-encoder) | ~1,5 GB |
-| Vazão na ingestão | ~1,9 trechos/s (os 1.525 trechos levam ~15 min, uma vez) |
+| Vazão na ingestão | ~1,9 trechos/s (os 1.477 trechos levaram ~10 min nesta máquina, uma vez) |
 | Vetorizar uma pergunta | ~90–110 ms |
 
 As perguntas geradas são curtas (cerca de 15 tokens), então vetorizá-las é bem mais
@@ -398,7 +415,7 @@ do cross-encoder.
 - **`IndexFlatIP`** compara a pergunta com todos os vetores guardados usando o produto
   interno, o que o torna uma busca k-NN exata. Como os vetores são normalizados em L2,
   **produto interno = similaridade de cosseno**, e as notas são cossenos em [-1, 1].
-- **A busca exata é a escolha certa neste tamanho.** 1.525 vetores × 384 dimensões são
+- **A busca exata é a escolha certa neste tamanho.** 1.477 vetores × 384 dimensões são
   cerca de 2,3 MB, e o índice de perguntas tem alguns milhares de vetores curtos.
   Percorrer todos leva bem menos de um milissegundo. A busca exata não precisa de
   treino nem de ajuste, e tem recall perfeito.
@@ -434,7 +451,7 @@ nenhum, quando a maioria dos vizinhos fosse de outras categorias.
 |---|---|
 | `index.faiss` | Os vetores dos trechos, por id (serializados com `faiss.serialize_index` e gravados pelo Python, o que evita problemas de caminho do gravador em C++ no Windows). |
 | `questions.faiss` | Os vetores das perguntas geradas, por id. Só existe quando os trechos foram enriquecidos; uma ingestão sem enriquecimento apaga o arquivo antigo. |
-| `chunks.json` | `chunk_id`, `document_id`, `position`, `text`, `enrichment` e `enrichment_text` de cada trecho. O índice BM25 é refeito em memória a partir dele (sobre o texto enriquecido): rápido neste tamanho, e sem objetos Python serializados com pickle no disco. |
+| `chunks.json` | `chunk_id`, `document_id`, `position`, `text`, `enrichment` e `enrichment_text` de cada trecho. O índice BM25 é refeito em memória a partir dele (sobre o trecho mais o bloco da LLM): rápido neste tamanho, e sem objetos Python serializados com pickle no disco. |
 | `documents.json` | Metadados e corpo de cada documento, para resultados, atribuição e o leitor de artigos. |
 | `manifest.json` | Como o índice foi construído (abaixo). |
 
@@ -445,7 +462,7 @@ interrompida nunca deixa um índice pela metade descrito como completo.
 
 ### O manifesto
 
-O manifesto do dataset atual, sem enriquecimento (`created_at` é a hora da execução):
+O manifesto do índice atual (`created_at` é a hora da execução):
 
 ```json
 {
@@ -455,20 +472,24 @@ O manifesto do dataset atual, sem enriquecimento (`created_at` é a hora da exec
   "metric": "cosine (inner product of L2-normalized vectors)",
   "index_type": "IndexIDMap2(IndexFlatIP)",
   "document_count": 100,
-  "chunk_count": 1525,
+  "chunk_count": 1477,
   "chunk_max_tokens": 256,
   "chunk_overlap_tokens": 48,
+  "chunk_min_tokens": 40,
+  "chunker_version": "2",
+  "index_version": "2",
   "dataset_hash": "99ec4a7728c58ec9f6b84c576db6a5f2ce8a1a07d87862aae8b2bd1c6224c313",
   "created_at": "...",
-  "enrichment_model": null,
-  "enrichment_prompt_version": null,
-  "question_count": 0
+  "enrichment_model": "gpt-5-nano",
+  "enrichment_prompt_version": "2",
+  "question_count": 7162
 }
 ```
 
-Com enriquecimento, os três últimos campos passam a valer, por exemplo,
-`"enrichment_model": "gpt-5-nano"`, `"enrichment_prompt_version": "2"` e
-`"question_count"` com o total de perguntas geradas.
+Sem enriquecimento, `enrichment_model` e `enrichment_prompt_version` ficam `null` e
+`question_count` fica 0. `chunker_version` e `index_version` mudam quando a lógica do
+chunking ou o que vai para os índices muda no código: o hash do dataset não muda nesses
+casos, e são eles que fazem a próxima ingestão reconstruir o índice.
 
 **Por que ele é validado ao carregar:** vetores produzidos por modelos diferentes, ou
 por revisões diferentes do mesmo modelo, vivem em espaços diferentes. Comparar uma
@@ -519,15 +540,15 @@ conteúdo) e o mesmo modelo
    alternativas geradas pela LLM são vetorizadas e buscadas em `index.faiss` e
    `questions.faiss`; cada trecho fica com o melhor cosseno entre todas. Assim uma
    reescrita ruim não decide a busca sozinha.
-3. **BM25.** Busca todas essas formulações mais os termos semelhantes sobre o texto
-   enriquecido dos trechos.
+3. **BM25.** Busca todas essas formulações mais os termos semelhantes sobre o trecho
+   mais o bloco da LLM.
 4. **Fusão (RRF)** das duas listas pela posição.
 5. **Reforço por metadados.** Candidatos cuja categoria ou tipo de conteúdo combinam com
    os da pergunta ganham `METADATA_BOOST` da folga que falta para a nota máxima
    (`nota + reforço × (1 − nota)`, uma vez para cada combinação). É um reforço, nunca um
    filtro: um palpite errado da LLM não pode esconder a resposta.
-6. **Reordenação.** O cross-encoder lê "pergunta (reescrita)" junto com o texto
-   enriquecido de cada um dos 20 melhores candidatos (`RERANK_CANDIDATES`; 20 empatou
+6. **Reordenação.** O cross-encoder lê "pergunta (reescrita)" junto com o trecho
+   **original** de cada um dos 20 melhores candidatos (`RERANK_CANDIDATES`; 20 empatou
    com 30 em qualidade, com 40% menos tempo, veja [EVALUATION.md](EVALUATION.md)).
 7. **Contexto ampliado.** Cada resultado leva também `context_text`: o trecho junto com
    o trecho anterior e o seguinte do mesmo artigo (`CONTEXT_NEIGHBORS`), sem repetir a

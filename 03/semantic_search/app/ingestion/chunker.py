@@ -79,7 +79,13 @@ class Chunk(BaseModel):
 
     @property
     def search_text(self) -> str:
-        """Return the text that is embedded, indexed by BM25 and read by the re-ranker.
+        """Return the text indexed by BM25: the passage plus the enrichment.
+
+        Only BM25 reads it. The chunk vector and the cross-encoder use the original
+        `text`: on the evaluation set, the cross-encoder reading the appended block
+        ("Contexto / Termos semelhantes / Perguntas") lost 3 queries in 1st place
+        (MRR 0.806 against 0.849 with the original text), and the vector was the same
+        either way. The questions keep their own vectors in the question index.
 
         Returns:
             `text`, followed by the enrichment when there is one.

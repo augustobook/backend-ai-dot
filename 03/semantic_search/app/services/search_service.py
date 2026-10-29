@@ -550,9 +550,10 @@ class SearchService:
         assert self._reranker is not None
         reranker = self._reranker
         pool = candidates[: self._settings.rerank_candidates]
-        # The enriched text: its context and questions tell the cross-encoder what a
-        # passage is about when the passage alone does not name its subject.
-        passages = [self._chunks[candidate.chunk_id].search_text for candidate in pool]
+        # The original passage, not the enriched text: the appended LLM block is not
+        # the kind of text the cross-encoder was trained on, and on the evaluation set
+        # it cost 3 queries in 1st place (see docs/EVALUATION.md).
+        passages = [self._chunks[candidate.chunk_id].text for candidate in pool]
         scores = _timed(timings, "rerank", lambda: reranker.score(query, passages))
 
         for candidate, score in zip(pool, scores, strict=True):

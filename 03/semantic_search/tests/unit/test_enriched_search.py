@@ -1,12 +1,28 @@
 """Tests of the search over an enriched index, with and without the query rewrite."""
 
+from collections.abc import Sequence
+
 import pytest
 
 from app.core.config import Settings
 from app.ingestion.chunker import PARAGRAPH_SEPARATOR
 from app.llm.metadata import QueryAnalysis
+from app.services.artifacts import load_artifacts
 from tests.conftest import build_enriched_service
 from tests.fakes import FakeEmbedder, FakeQueryRewriter, FakeReranker
+
+
+class RecordingReranker(FakeReranker):
+    """Fake cross-encoder that keeps the passages it was asked to score."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.passages: list[str] = []
+
+    def score(self, query: str, passages: Sequence[str]) -> list[float]:
+        """Record the passages, then score them like the fake."""
+        self.passages.extend(passages)
+        return super().score(query, passages)
 
 
 def analysis(
@@ -149,16 +165,39 @@ def test_metadata_boost_raises_matching_candidates_only(
     assert all(result.score == plain[result.document_id].score for result in others)
 
 
-def test_reranker_reads_the_enriched_text(
+def test_reranker_reads_the_original_passage_only(
     enriched_settings: Settings, embedder: FakeEmbedder
 ) -> None:
-    """The cross-encoder sees the lay terms, so it can score a lay query."""
-    service = build_enriched_service(enriched_settings, embedder, reranker=FakeReranker())
+    """The cross-encoder never sees the LLM block appended for BM25.
 
-    result = service.search("intestino preso", rerank=True).results[0]
+    "prisão de ventre" only exists in the enrichment of Fibras: BM25 still finds the
+    chunk, but the cross-encoder, reading the original passage, gives it no credit.
+    """
+    reranker = RecordingReranker()
+    service = build_enriched_service(enriched_settings, embedder, reranker=reranker)
+
+    result = service.search("prisão de ventre", mode="keyword", rerank=True).results[0]
 
     assert result.document_id == "nut-01"
-    assert result.stage_scores.rerank == 1.0
+    assert result.stage_scores.rerank == 0.0
+    assert reranker.passages
+    assert not any("Termos semelhantes:" in passage for passage in reranker.passages)
+
+
+def test_chunk_vectors_embed_the_original_passage_only(
+    enriched_settings: Settings, embedder: FakeEmbedder
+) -> None:
+    """The enrichment stays out of the chunk vector; its questions have their own."""
+    artifacts = load_artifacts(enriched_settings.storage_dir)
+    chunk = next(c for c in artifacts.chunks if c.document_id == "nut-01")
+
+    def cosine_with_stored(text: str) -> float:
+        vector = embedder.embed_documents([text])[0]
+        hits = dict(artifacts.store.search(vector, len(artifacts.chunks)))
+        return hits[chunk.chunk_id]
+
+    assert cosine_with_stored(chunk.text) == pytest.approx(1.0, abs=1e-5)
+    assert cosine_with_stored(chunk.search_text) < 0.999
 
 
 def test_alternative_queries_are_searched_too(

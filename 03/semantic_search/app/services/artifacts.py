@@ -63,6 +63,7 @@ class IndexManifest(BaseModel):
         chunk_overlap_tokens: Overlap used.
         chunk_min_tokens: Minimum section size used (None: built before it existed).
         chunker_version: Version of the chunking logic (None: before versioning).
+        index_version: Version of what goes into the indexes (None: before versioning).
         dataset_hash: SHA-256 of the dataset files.
         created_at: When the index was built (UTC).
         enrichment_model: LLM that enriched the chunks; None when they were not.
@@ -81,6 +82,7 @@ class IndexManifest(BaseModel):
     chunk_overlap_tokens: int
     chunk_min_tokens: int | None = None
     chunker_version: str | None = None
+    index_version: str | None = None
     dataset_hash: str
     created_at: datetime
     enrichment_model: str | None = None
