@@ -9,6 +9,7 @@ import logging
 from typing import Any
 
 from dash import Dash, Input, Output, State, ctx, no_update
+from dash.exceptions import PreventUpdate
 
 from library_ui import layout, services
 from library_ui.api_client import (
@@ -339,6 +340,7 @@ def register_callbacks(app: Dash, client: BooksApiClient, settings: Settings) ->
             "next_clicks": Input(Ids.NEXT_PAGE, "n_clicks"),
             "tz_name": Input(Ids.BROWSER_TZ, "data"),
             "books_version": Input(Ids.BOOKS_VERSION, "data"),
+            "active_tab": Input(Ids.TABS, "active_tab"),
         },
         state={
             "title": State(Ids.SEARCH_TITLE, "value"),
@@ -355,6 +357,7 @@ def register_callbacks(app: Dash, client: BooksApiClient, settings: Settings) ->
         next_clicks: int,
         tz_name: str | None,
         books_version: int | None,
+        active_tab: str | None,
         title: str | None,
         author: str | None,
         stored_state: dict[str, Any] | None,
@@ -362,7 +365,9 @@ def register_callbacks(app: Dash, client: BooksApiClient, settings: Settings) ->
         """Load a page of search results.
 
         Triggered by Search/Enter, Clear, Previous/Next, on page load (when the
-        browser timezone arrives) and after a book is registered.
+        browser timezone arrives), after a book is registered, edited or
+        deleted, and every time the Search tab is opened, so the list always
+        shows the current catalog (including changes made by other users).
 
         Args:
             search_clicks: Clicks on Search.
@@ -373,6 +378,7 @@ def register_callbacks(app: Dash, client: BooksApiClient, settings: Settings) ->
             next_clicks: Clicks on Next.
             tz_name: Browser timezone.
             books_version: Counter bumped when a book is registered.
+            active_tab: Tab currently open.
             title: Title filter input value.
             author: Author filter input value.
             stored_state: Current search state.
@@ -380,6 +386,10 @@ def register_callbacks(app: Dash, client: BooksApiClient, settings: Settings) ->
         Returns:
             Values for every output of the search area.
         """
+        # Leaving the Search tab needs no request; opening it reloads the
+        # current filters and page ("reload" below).
+        if ctx.triggered_id == Ids.TABS and active_tab != layout.TAB_SEARCH:
+            raise PreventUpdate
         # Work out what the user did and which page/filters to load.
         action = SEARCH_ACTIONS.get(str(ctx.triggered_id), "reload")
         current = services.SearchState.from_dict(stored_state)
@@ -836,19 +846,26 @@ def register_callbacks(app: Dash, client: BooksApiClient, settings: Settings) ->
         Output(Ids.DASHBOARD_ALERT, "children"),
         Input(Ids.REFRESH_BUTTON, "n_clicks"),
         Input(Ids.BOOKS_VERSION, "data"),
+        Input(Ids.TABS, "active_tab"),
     )
-    def refresh_dashboard(n_clicks: int, books_version: int | None) -> tuple[Any, Any, Any]:
+    def refresh_dashboard(
+        n_clicks: int, books_version: int | None, active_tab: str | None
+    ) -> tuple[Any, Any, Any]:
         """Load every book and rebuild the dashboard.
 
-        Runs on page load, on "Refresh" and after a book is registered.
+        Runs on page load, on "Refresh", after a book is registered, edited or
+        deleted, and every time the Dashboard tab is opened.
 
         Args:
             n_clicks: Clicks on Refresh.
             books_version: Counter bumped when a book is registered.
+            active_tab: Tab currently open.
 
         Returns:
             Summary cards, charts and an alert (if the API failed).
         """
+        if ctx.triggered_id == Ids.TABS and active_tab != layout.TAB_DASHBOARD:
+            raise PreventUpdate
         # The dashboard needs the whole catalog, which takes several pages.
         try:
             books = client.fetch_all_books()

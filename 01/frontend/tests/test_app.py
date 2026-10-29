@@ -16,7 +16,7 @@ from flask.testing import FlaskClient
 from library_ui.api_client import BooksApiClient
 from library_ui.app import create_app
 from library_ui.config import Settings
-from library_ui.layout import Ids
+from library_ui.layout import TAB_DASHBOARD, TAB_REGISTER, TAB_SEARCH, Ids
 
 BASE_URL = "http://api.test"
 BOOK: dict[str, Any] = {
@@ -124,6 +124,7 @@ def test_dashboard_callback_renders_cards(
         inputs=[
             {"id": Ids.REFRESH_BUTTON, "property": "n_clicks", "value": 1},
             {"id": Ids.BOOKS_VERSION, "property": "data", "value": 0},
+            {"id": Ids.TABS, "property": "active_tab", "value": TAB_DASHBOARD},
         ],
         changed=f"{Ids.REFRESH_BUTTON}.n_clicks",
     )
@@ -145,6 +146,7 @@ def test_dashboard_callback_shows_alert_when_api_is_down(
         inputs=[
             {"id": Ids.REFRESH_BUTTON, "property": "n_clicks", "value": 0},
             {"id": Ids.BOOKS_VERSION, "property": "data", "value": 0},
+            {"id": Ids.TABS, "property": "active_tab", "value": TAB_DASHBOARD},
         ],
     )
 
@@ -164,6 +166,7 @@ def _search_inputs(**values: Any) -> list[dict[str, Any]]:
         "next": (Ids.NEXT_PAGE, "n_clicks", 0),
         "tz": (Ids.BROWSER_TZ, "data", "UTC"),
         "version": (Ids.BOOKS_VERSION, "data", 0),
+        "tab": (Ids.TABS, "active_tab", TAB_SEARCH),
     }
     return [
         {"id": cid, "property": prop, "value": values.get(key, default)}
@@ -447,3 +450,56 @@ def test_postman_button_downloads_collection(http: FlaskClient) -> None:
     assert download["filename"] == "library-api.postman_collection.json"
     assert '"value": "https://api.example"' in download["content"]
     assert '"value": "demo-key"' in download["content"]
+
+
+_SEARCH_STATE: list[dict[str, Any]] = [
+    {"id": Ids.SEARCH_TITLE, "property": "value", "value": ""},
+    {"id": Ids.SEARCH_AUTHOR, "property": "value", "value": ""},
+    {"id": Ids.SEARCH_STATE, "property": "data", "value": {"title": "", "author": "", "page": 0}},
+]
+
+
+def test_opening_search_tab_reloads_results(
+    dash_app: Dash, http: FlaskClient, api: respx.MockRouter
+) -> None:
+    """Opening the Search tab fetches the books again, without a page reload."""
+    route = api.get("/books").mock(return_value=httpx.Response(200, json=[BOOK]))
+
+    result = call_callback(
+        dash_app,
+        http,
+        f"{Ids.SEARCH_STATE}.data",
+        inputs=_search_inputs(tab=TAB_SEARCH),
+        state=_SEARCH_STATE,
+        changed=f"{Ids.TABS}.active_tab",
+    )
+
+    assert route.called
+    assert result[Ids.SEARCH_BOOKS]["data"] == [BOOK]
+
+
+def test_leaving_search_tab_does_not_call_api(
+    dash_app: Dash, http: FlaskClient, api: respx.MockRouter
+) -> None:
+    """Switching to another tab does not reload the search results."""
+    route = api.get("/books")
+    output_key = next(
+        k for k in dash_app.callback_map if k.lstrip(".").startswith(Ids.SEARCH_STATE)
+    )
+
+    response = http.post(
+        "/_dash-update-component",
+        json={
+            "output": output_key,
+            "outputs": [
+                {"id": part.rsplit(".", 1)[0], "property": part.rsplit(".", 1)[1]}
+                for part in output_key.strip(".").split("...")
+            ],
+            "inputs": _search_inputs(tab=TAB_REGISTER),
+            "state": _SEARCH_STATE,
+            "changedPropIds": [f"{Ids.TABS}.active_tab"],
+        },
+    )
+
+    assert response.status_code == 204  # PreventUpdate: nothing changes
+    assert not route.called
