@@ -14,6 +14,10 @@ Este arquivo é só o mapa do repositório.
 
 ## Acesse online
 
+> **Observação:** os projetos rodam numa máquina na AWS que, por causa do custo, pode
+> estar desligada em alguns momentos. Se algum link não abrir, é só entrar em contato
+> comigo que eu ligo o servidor.
+
 | Projeto | Link |
 |---|---|
 | Página inicial | <https://backend-ai-dot.oladata.com.br> |
