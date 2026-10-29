@@ -92,7 +92,12 @@ The tab names below are the ones shown on screen.
   Buscar and Limpar buttons, a result counter ("Exibindo livros 1–10"), a sortable table with
   title, author, publication date (`15/01/2020`), registration date (`28/10/2026 14:30`) and a
   truncated summary, Anterior/Próxima pagination and a "Nenhum livro encontrado" empty state.
-  Clicking a row opens a modal with the full details loaded from `GET /books/{id}`.
+  Clicking a row opens a modal with the full details loaded from `GET /books/{id}`, plus
+  **Edit** (pre-filled form, same validation as registering; only changed fields are sent in
+  `PATCH /books/{id}`) and **Delete** (asks for confirmation before `DELETE /books/{id}`).
+  Editing and deleting were not required by the assignment; they complete the CRUD.
+  The navbar also has a **Coleção Postman** button that downloads the API test collection,
+  pointed at `PUBLIC_API_URL`.
 - **Painel** (dashboard) — four summary cards (total books, distinct authors, oldest and newest
   book), a bar chart of books per publication year, a horizontal bar chart of the top 10
   authors, an Atualizar (refresh) button and an empty state when the library has no books. It
@@ -177,6 +182,8 @@ environment variables win over the file. `.env` is git-ignored, so the API key s
 | `DASH_HOST`           | `127.0.0.1`             | Host of the development server                      |
 | `DASH_PORT`           | `8050`                  | Port of the development server                      |
 | `DASH_DEBUG`          | `true`                  | Dev server only: auto-reload on code changes and refresh the browser (set `false` to disable) |
+| `PUBLIC_API_URL`      | (`API_BASE_URL`)        | API URL written into the downloaded Postman collection (as the browser sees it, not the Docker name) |
+| `POSTMAN_INCLUDE_API_KEY` | `false`             | Embed `API_KEY` in the downloaded collection. Public demos only |
 
 ## Tests and quality
 

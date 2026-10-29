@@ -1,13 +1,17 @@
 """Pure functions behind the UI: formatting, validation, error parsing and chart data.
 
-Nothing here performs I/O or touches Dash components, so every function can be
-unit-tested in isolation. Callbacks stay thin by delegating to this module.
+Nothing here touches Dash components or the network, so every function can be
+unit-tested in isolation (the only I/O is reading the bundled Postman file).
+Callbacks stay thin by delegating to this module.
 """
 
+import copy
+import json
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, tzinfo
+from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -218,7 +222,11 @@ class BookForm:
 
 
 def validate_book_form(
-    form: BookForm, tz_name: str | None, now: datetime | None = None
+    form: BookForm,
+    tz_name: str | None,
+    now: datetime | None = None,
+    *,
+    require_created_at: bool = False,
 ) -> dict[str, str]:
     """Validate the form with the same rules the API enforces.
 
@@ -229,6 +237,9 @@ def validate_book_form(
         form: The raw form values.
         tz_name: IANA timezone of the user, used to interpret "Created At".
         now: Current UTC time. Injectable for tests.
+        require_created_at: Whether "Created At" must be filled. Optional when
+            registering (the API stamps the current time), required when editing
+            (an empty value cannot be stored).
 
     Returns:
         A mapping of field name to error message. Empty when the form is valid.
@@ -252,8 +263,10 @@ def validate_book_form(
         except ValueError:
             errors[FIELD_PUBLICATION_DATE] = "Informe uma data válida."
 
-    # "Created At" is optional, but a time without a date is ambiguous.
-    if form.created_time and not form.created_date:
+    # "Created At" is optional on registration, but a time without a date is ambiguous.
+    if require_created_at and not form.created_date:
+        errors[FIELD_CREATED_AT] = "Informe a data de cadastro."
+    elif form.created_time and not form.created_date:
         errors[FIELD_CREATED_AT] = "Escolha uma data para o horário informado."
     elif form.created_date:
         try:
@@ -291,6 +304,133 @@ def build_book_payload(form: BookForm, tz_name: str | None) -> dict[str, Any]:
     if form.created_date:
         payload[FIELD_CREATED_AT] = local_to_utc_iso(form.created_date, form.created_time, tz_name)
     return payload
+
+
+# --- Edit form -------------------------------------------------------------
+
+
+def utc_to_local_parts(value: str | None, tz_name: str | None) -> tuple[str, str]:
+    """Split an API datetime into the local date and time shown in the edit form.
+
+    The inverse of `local_to_utc_iso`: the stored UTC instant is converted to
+    the user's timezone so the inputs show the wall-clock time they expect.
+
+    Args:
+        value: ISO 8601 datetime from the API.
+        tz_name: IANA timezone of the user.
+
+    Returns:
+        `(YYYY-MM-DD, HH:MM)`, or two empty strings when the value is missing or invalid.
+    """
+    if not value:
+        return "", ""
+    try:
+        local = parse_api_datetime(value).astimezone(resolve_timezone(tz_name))
+    except ValueError:
+        return "", ""
+    return local.date().isoformat(), local.strftime("%H:%M")
+
+
+def book_to_form(book: Mapping[str, Any], tz_name: str | None) -> BookForm:
+    """Fill the edit form with a stored book.
+
+    Args:
+        book: The book returned by the API.
+        tz_name: IANA timezone of the user.
+
+    Returns:
+        The form values.
+    """
+    created_date, created_time = utc_to_local_parts(book.get(FIELD_CREATED_AT), tz_name)
+    return BookForm(
+        title=str(book.get(FIELD_TITLE) or ""),
+        author=str(book.get(FIELD_AUTHOR) or ""),
+        publication_date=str(book.get(FIELD_PUBLICATION_DATE) or "")[:10],
+        summary=str(book.get(FIELD_SUMMARY) or ""),
+        created_date=created_date,
+        created_time=created_time,
+    )
+
+
+def build_update_payload(
+    form: BookForm, tz_name: str | None, original: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Build the JSON body for `PATCH /books/{id}` with only the changed fields.
+
+    Sending only what changed keeps the request minimal and, above all, keeps
+    the stored `created_at` intact (seconds included) when the user did not touch
+    it, since the form only shows hours and minutes.
+
+    Args:
+        form: The raw edit form values (assumed to be valid).
+        tz_name: IANA timezone of the user.
+        original: The book as it was when the form was opened.
+
+    Returns:
+        The fields that differ from `original`; empty when nothing changed.
+    """
+    payload = build_book_payload(form, tz_name)
+    # "Created At" is compared in the form's own terms (local date + HH:MM).
+    shown = utc_to_local_parts(original.get(FIELD_CREATED_AT), tz_name)
+    if (form.created_date or "", (form.created_time or "")[:5]) == shown:
+        payload.pop(FIELD_CREATED_AT, None)
+    return {
+        field: value
+        for field, value in payload.items()
+        if field == FIELD_CREATED_AT or value != original.get(field)
+    }
+
+
+# --- Postman collection ----------------------------------------------------
+
+
+POSTMAN_COLLECTION_FILE = Path(__file__).parent / "postman" / "library-api.postman_collection.json"
+POSTMAN_DOWNLOAD_NAME = "library-api.postman_collection.json"
+
+
+def build_postman_collection(
+    template: Mapping[str, Any], base_url: str, api_key: str | None
+) -> dict[str, Any]:
+    """Return the Postman collection ready to run against the given API.
+
+    `baseUrl` and `apiKey` are stored as collection variables, so the file works
+    right after import, without creating an environment. A selected Postman
+    environment still overrides them.
+
+    Args:
+        template: The collection as stored in the repository.
+        base_url: API URL reachable from the user's machine.
+        api_key: Key to embed, or `None` to leave it for the user to fill in.
+
+    Returns:
+        A new collection; `template` is not modified.
+    """
+    collection = copy.deepcopy(dict(template))
+    filled = {"baseUrl": base_url, "apiKey": api_key or ""}
+    variables = [
+        variable for variable in collection.get("variable", []) if variable.get("key") not in filled
+    ]
+    collection["variable"] = [
+        {"key": "baseUrl", "value": base_url, "type": "string"},
+        {"key": "apiKey", "value": api_key or "", "type": "secret"},
+        *variables,
+    ]
+    return collection
+
+
+def load_postman_collection(base_url: str, api_key: str | None) -> str:
+    """Read the bundled collection and fill in the API URL and key.
+
+    Args:
+        base_url: API URL reachable from the user's machine.
+        api_key: Key to embed, or `None`.
+
+    Returns:
+        The collection as JSON text.
+    """
+    template = json.loads(POSTMAN_COLLECTION_FILE.read_text(encoding="utf-8"))
+    collection = build_postman_collection(template, base_url, api_key)
+    return json.dumps(collection, indent=2, ensure_ascii=False)
 
 
 # --- API error parsing -----------------------------------------------------

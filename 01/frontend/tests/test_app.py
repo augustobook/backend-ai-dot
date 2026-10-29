@@ -62,7 +62,9 @@ def call_callback(
     Args:
         dash_app: The app (used to look up the callback's output spec).
         http: Flask test client.
-        first_output: `id.prop` of the callback's first output.
+        first_output: `id.prop` of the callback's first output. Outputs shared
+            with another callback carry an `@<hash>` suffix; end with `@` to pick
+            that callback instead of the one owning the plain output.
         inputs: Input values (`id`, `property`, `value`).
         state: State values.
         changed: `id.prop` that triggered the callback.
@@ -70,11 +72,17 @@ def call_callback(
     Returns:
         The `response` section of Dash's answer, keyed by component id.
     """
-    output_key = next(key for key in dash_app.callback_map if first_output in key)
-    outputs = [
+    output_key = next(
+        key for key in dash_app.callback_map if key.lstrip(".").startswith(first_output)
+    )
+    parts = [
         {"id": part.rsplit(".", 1)[0], "property": part.rsplit(".", 1)[1]}
         for part in output_key.strip(".").split("...")
     ]
+    # Multi-output keys look like `..a.x...b.y..`; a single output is sent unwrapped.
+    outputs: list[dict[str, str]] | dict[str, str] = (
+        parts if output_key.startswith("..") else parts[0]
+    )
     response = http.post(
         "/_dash-update-component",
         json={
@@ -253,6 +261,159 @@ def test_register_callback_accepts_typed_date(
     assert "cadastrado com sucesso" in str(result[Ids.REGISTER_ALERT])
 
 
+def _edit_state(book: dict[str, Any] | None, **values: Any) -> list[dict[str, Any]]:
+    """Build the state of the save callback: the edit form plus context."""
+    fields = {
+        Ids.EDIT_TITLE: "Dune",
+        Ids.EDIT_AUTHOR: "Frank Herbert",
+        Ids.EDIT_PUBLICATION_DATE: "1965-08-01",
+        Ids.EDIT_SUMMARY: "Spice.",
+        Ids.EDIT_CREATED_DATE: "2026-10-28",
+        Ids.EDIT_CREATED_TIME: "14:30",
+    }
+    fields.update(values)
+    return [
+        *({"id": cid, "property": "value", "value": value} for cid, value in fields.items()),
+        {"id": Ids.CURRENT_BOOK, "property": "data", "value": book},
+        {"id": Ids.BROWSER_TZ, "property": "data", "value": "UTC"},
+        {"id": Ids.BOOKS_VERSION, "property": "data", "value": 3},
+    ]
+
+
+def test_details_enable_edit_and_delete_once_loaded(
+    dash_app: Dash, http: FlaskClient, api: respx.MockRouter
+) -> None:
+    """Clicking a row loads the book and enables its Edit and Delete buttons."""
+    api.get("/books/1").mock(return_value=httpx.Response(200, json=BOOK))
+
+    result = call_callback(
+        dash_app,
+        http,
+        f"{Ids.DETAILS_MODAL}.is_open",
+        inputs=[
+            {"id": Ids.RESULTS_TABLE, "property": "active_cell", "value": {"row_id": 1}},
+            {"id": Ids.DETAILS_CLOSE, "property": "n_clicks", "value": 0},
+        ],
+        state=[{"id": Ids.BROWSER_TZ, "property": "data", "value": "UTC"}],
+        changed=f"{Ids.RESULTS_TABLE}.active_cell",
+    )
+
+    assert result[Ids.CURRENT_BOOK]["data"] == BOOK
+    assert result[Ids.DETAILS_EDIT]["disabled"] is False
+    assert result[Ids.DETAILS_DELETE]["disabled"] is False
+
+
+def test_edit_button_opens_form_filled_with_book(dash_app: Dash, http: FlaskClient) -> None:
+    """Edit swaps the details modal for the edit form, pre-filled in local time."""
+    result = call_callback(
+        dash_app,
+        http,
+        f"{Ids.EDIT_MODAL}.is_open",
+        inputs=[
+            {"id": Ids.DETAILS_EDIT, "property": "n_clicks", "value": 1},
+            {"id": Ids.EDIT_CANCEL, "property": "n_clicks", "value": 0},
+        ],
+        state=[
+            {"id": Ids.CURRENT_BOOK, "property": "data", "value": BOOK},
+            {"id": Ids.BROWSER_TZ, "property": "data", "value": "America/Sao_Paulo"},
+        ],
+        changed=f"{Ids.DETAILS_EDIT}.n_clicks",
+    )
+
+    assert result[Ids.EDIT_MODAL]["is_open"] is True
+    assert result[Ids.DETAILS_MODAL]["is_open"] is False
+    assert result[Ids.EDIT_TITLE]["value"] == "Dune"
+    assert result[Ids.EDIT_CREATED_DATE]["value"] == "2026-10-28"
+    assert result[Ids.EDIT_CREATED_TIME]["value"] == "11:30"
+
+
+def test_save_edit_sends_changed_fields_and_refreshes(
+    dash_app: Dash, http: FlaskClient, api: respx.MockRouter
+) -> None:
+    """Saving PATCHes only what changed, closes the modal and bumps `books_version`."""
+    route = api.patch("/books/1").mock(
+        return_value=httpx.Response(200, json={**BOOK, "title": "Dune Messiah"})
+    )
+
+    result = call_callback(
+        dash_app,
+        http,
+        f"{Ids.EDIT_ALERT}.children",
+        inputs=[{"id": Ids.EDIT_SAVE, "property": "n_clicks", "value": 1}],
+        state=_edit_state(BOOK, **{Ids.EDIT_TITLE: "Dune Messiah"}),
+        changed=f"{Ids.EDIT_SAVE}.n_clicks",
+    )
+
+    assert route.calls.last.request.read() == b'{"title":"Dune Messiah"}'
+    assert result[Ids.EDIT_MODAL]["is_open"] is False
+    assert result[Ids.BOOKS_VERSION]["data"] == 4
+    assert "atualizado com sucesso" in str(result[Ids.BOOK_ACTION_ALERT])
+
+
+def test_save_edit_validates_before_calling_api(
+    dash_app: Dash, http: FlaskClient, api: respx.MockRouter
+) -> None:
+    """A blank title is flagged on the edit form and the API is not called."""
+    route = api.patch("/books/1")
+
+    result = call_callback(
+        dash_app,
+        http,
+        f"{Ids.EDIT_ALERT}.children",
+        inputs=[{"id": Ids.EDIT_SAVE, "property": "n_clicks", "value": 1}],
+        state=_edit_state(BOOK, **{Ids.EDIT_TITLE: "  "}),
+        changed=f"{Ids.EDIT_SAVE}.n_clicks",
+    )
+
+    assert not route.called
+    assert result[Ids.EDIT_TITLE]["invalid"] is True
+    assert Ids.EDIT_MODAL not in result  # stays open
+
+
+def test_delete_asks_for_confirmation(dash_app: Dash, http: FlaskClient) -> None:
+    """Delete opens a confirmation naming the book instead of deleting right away."""
+    result = call_callback(
+        dash_app,
+        http,
+        f"{Ids.DELETE_MODAL}.is_open",
+        inputs=[
+            {"id": Ids.DETAILS_DELETE, "property": "n_clicks", "value": 1},
+            {"id": Ids.DELETE_CANCEL, "property": "n_clicks", "value": 0},
+        ],
+        state=[{"id": Ids.CURRENT_BOOK, "property": "data", "value": BOOK}],
+        changed=f"{Ids.DETAILS_DELETE}.n_clicks",
+    )
+
+    assert result[Ids.DELETE_MODAL]["is_open"] is True
+    assert result[Ids.DETAILS_MODAL]["is_open"] is False
+    assert "Dune" in str(result[Ids.DELETE_MESSAGE])
+
+
+def test_confirm_delete_removes_book_and_refreshes(
+    dash_app: Dash, http: FlaskClient, api: respx.MockRouter
+) -> None:
+    """Confirming sends DELETE, closes the modal and bumps `books_version`."""
+    route = api.delete("/books/1").mock(return_value=httpx.Response(204))
+
+    result = call_callback(
+        dash_app,
+        http,
+        f"{Ids.DELETE_MODAL}.is_open@",
+        inputs=[{"id": Ids.DELETE_CONFIRM, "property": "n_clicks", "value": 1}],
+        state=[
+            {"id": Ids.CURRENT_BOOK, "property": "data", "value": BOOK},
+            {"id": Ids.BOOKS_VERSION, "property": "data", "value": 3},
+        ],
+        changed=f"{Ids.DELETE_CONFIRM}.n_clicks",
+    )
+
+    assert route.called
+    assert result[Ids.DELETE_MODAL]["is_open"] is False
+    assert result[Ids.BOOKS_VERSION]["data"] == 4
+    assert result[Ids.CURRENT_BOOK]["data"] is None
+    assert "foi excluído" in str(result[Ids.BOOK_ACTION_ALERT])
+
+
 def test_form_feedback_uses_invalid_style(http: FlaskClient) -> None:
     """Inline errors use Bootstrap's red "invalid" style and dates are native inputs."""
     layout = http.get("/_dash-layout").get_json()
@@ -260,3 +421,29 @@ def test_form_feedback_uses_invalid_style(http: FlaskClient) -> None:
 
     assert "'type': 'invalid'" in text
     assert "'type': 'date'" in text
+
+
+def test_postman_button_downloads_collection(http: FlaskClient) -> None:
+    """The navbar button returns the collection pointed at the configured API."""
+    dash_app = create_app(
+        Settings(
+            api_base_url="http://api:8000",
+            api_key="demo-key",
+            public_api_url="https://api.example",
+            postman_include_api_key=True,
+        ),
+        BooksApiClient(BASE_URL),
+    )
+
+    result = call_callback(
+        dash_app,
+        dash_app.server.test_client(),
+        f"{Ids.POSTMAN_DOWNLOAD}.data",
+        inputs=[{"id": Ids.POSTMAN_BUTTON, "property": "n_clicks", "value": 1}],
+        changed=f"{Ids.POSTMAN_BUTTON}.n_clicks",
+    )
+
+    download = result[Ids.POSTMAN_DOWNLOAD]["data"]
+    assert download["filename"] == "library-api.postman_collection.json"
+    assert '"value": "https://api.example"' in download["content"]
+    assert '"value": "demo-key"' in download["content"]

@@ -5,6 +5,7 @@ constants, and a typo becomes an `AttributeError` instead of a silent bug.
 """
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 import dash_bootstrap_components as dbc
@@ -18,6 +19,8 @@ class Ids:
     """Ids of every Dash component referenced by a callback."""
 
     ROOT = "app-root"
+    POSTMAN_BUTTON = "postman-button"
+    POSTMAN_DOWNLOAD = "postman-download"
     BROWSER_TZ = "browser-timezone"
     BOOKS_VERSION = "books-version"
     TABS = "main-tabs"
@@ -59,6 +62,38 @@ class Ids:
     DETAILS_TITLE = "details-title"
     DETAILS_BODY = "details-body"
     DETAILS_CLOSE = "details-close"
+    DETAILS_EDIT = "details-edit"
+    DETAILS_DELETE = "details-delete"
+    # The book shown in the details modal, as last loaded from the API.
+    CURRENT_BOOK = "current-book"
+    # Result of an edit or delete, shown above the search results.
+    BOOK_ACTION_ALERT = "book-action-alert"
+
+    # Edit book modal
+    EDIT_MODAL = "edit-modal"
+    EDIT_ALERT = "edit-alert"
+    EDIT_TITLE = "edit-title"
+    EDIT_TITLE_FEEDBACK = "edit-title-feedback"
+    EDIT_AUTHOR = "edit-author"
+    EDIT_AUTHOR_FEEDBACK = "edit-author-feedback"
+    EDIT_PUBLICATION_DATE = "edit-publication-date"
+    EDIT_PUBLICATION_DATE_FEEDBACK = "edit-publication-date-feedback"
+    EDIT_SUMMARY = "edit-summary"
+    EDIT_SUMMARY_FEEDBACK = "edit-summary-feedback"
+    EDIT_CREATED_DATE = "edit-created-date"
+    EDIT_CREATED_TIME = "edit-created-time"
+    EDIT_CREATED_AT_FEEDBACK = "edit-created-at-feedback"
+    EDIT_SAVE = "edit-save"
+    EDIT_SAVE_SPINNER = "edit-save-spinner"
+    EDIT_CANCEL = "edit-cancel"
+
+    # Delete confirmation modal
+    DELETE_MODAL = "delete-modal"
+    DELETE_MESSAGE = "delete-message"
+    DELETE_ALERT = "delete-alert"
+    DELETE_CONFIRM = "delete-confirm"
+    DELETE_SPINNER = "delete-spinner"
+    DELETE_CANCEL = "delete-cancel"
 
     # Dashboard
     REFRESH_BUTTON = "dashboard-refresh"
@@ -163,96 +198,164 @@ def _form_field(
 # --- Register Book ------------------------------------------------------------
 
 
+@dataclass(frozen=True, slots=True)
+class BookFormIds:
+    """Component ids of one book form (Register tab or Edit modal).
+
+    Both forms have the same fields, so they are built by `book_form_fields`
+    and validated by the same callback helpers; only the ids differ.
+    """
+
+    title: str
+    title_feedback: str
+    author: str
+    author_feedback: str
+    publication_date: str
+    publication_date_feedback: str
+    summary: str
+    summary_feedback: str
+    created_date: str
+    created_time: str
+    created_at_feedback: str
+
+
+REGISTER_FORM = BookFormIds(
+    title=Ids.TITLE,
+    title_feedback=Ids.TITLE_FEEDBACK,
+    author=Ids.AUTHOR,
+    author_feedback=Ids.AUTHOR_FEEDBACK,
+    publication_date=Ids.PUBLICATION_DATE,
+    publication_date_feedback=Ids.PUBLICATION_DATE_FEEDBACK,
+    summary=Ids.SUMMARY,
+    summary_feedback=Ids.SUMMARY_FEEDBACK,
+    created_date=Ids.CREATED_DATE,
+    created_time=Ids.CREATED_TIME,
+    created_at_feedback=Ids.CREATED_AT_FEEDBACK,
+)
+
+EDIT_FORM = BookFormIds(
+    title=Ids.EDIT_TITLE,
+    title_feedback=Ids.EDIT_TITLE_FEEDBACK,
+    author=Ids.EDIT_AUTHOR,
+    author_feedback=Ids.EDIT_AUTHOR_FEEDBACK,
+    publication_date=Ids.EDIT_PUBLICATION_DATE,
+    publication_date_feedback=Ids.EDIT_PUBLICATION_DATE_FEEDBACK,
+    summary=Ids.EDIT_SUMMARY,
+    summary_feedback=Ids.EDIT_SUMMARY_FEEDBACK,
+    created_date=Ids.EDIT_CREATED_DATE,
+    created_time=Ids.EDIT_CREATED_TIME,
+    created_at_feedback=Ids.EDIT_CREATED_AT_FEEDBACK,
+)
+
+
+def book_form_fields(
+    ids: BookFormIds, created_label: str, created_help: str | None = None
+) -> list[Component]:
+    """Build the fields shared by the Register and Edit forms.
+
+    Args:
+        ids: Component ids of the form.
+        created_label: Label of the "Created At" field.
+        created_help: Optional help text under "Created At".
+
+    Returns:
+        The form rows, without any button.
+    """
+    today = services.utc_today().isoformat()
+    return [
+        dbc.Row(
+            [
+                dbc.Col(
+                    _form_field(
+                        "Título",
+                        dbc.Input(id=ids.title, placeholder="Ex.: Duna", maxLength=255),
+                        ids.title_feedback,
+                    ),
+                    xs=12,
+                    md=6,
+                ),
+                dbc.Col(
+                    _form_field(
+                        "Autor",
+                        dbc.Input(id=ids.author, placeholder="Ex.: Frank Herbert", maxLength=255),
+                        ids.author_feedback,
+                    ),
+                    xs=12,
+                    md=6,
+                ),
+            ]
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    _form_field(
+                        "Data de publicação",
+                        # Native date input instead of dcc.DatePickerSingle: the user
+                        # can type the date directly (DD/MM/AAAA in a pt-BR browser),
+                        # the calendar follows the browser language and the value is
+                        # always ISO (YYYY-MM-DD). `max` blocks future dates in the
+                        # calendar; typed dates are validated again on submit.
+                        dbc.Input(
+                            id=ids.publication_date,
+                            type="date",
+                            max=today,
+                            className="date-input",
+                        ),
+                        ids.publication_date_feedback,
+                    ),
+                    xs=12,
+                    md=6,
+                ),
+                dbc.Col(
+                    _form_field(
+                        created_label,
+                        html.Div(
+                            [
+                                dbc.Input(
+                                    id=ids.created_date,
+                                    type="date",
+                                    max=today,
+                                    className="date-input",
+                                ),
+                                dbc.Input(id=ids.created_time, type="time", className="time-input"),
+                            ],
+                            className="d-flex gap-2",
+                        ),
+                        ids.created_at_feedback,
+                        help_text=created_help,
+                    ),
+                    xs=12,
+                    md=6,
+                ),
+            ]
+        ),
+        _form_field(
+            "Resumo",
+            dbc.Textarea(
+                id=ids.summary,
+                placeholder="Sobre o que é este livro?",
+                # Same cap as the API, so the user cannot type more than it accepts.
+                maxLength=services.MAX_SUMMARY_LENGTH,
+                rows=5,
+                style={"resize": "vertical"},
+            ),
+            ids.summary_feedback,
+        ),
+    ]
+
+
 def register_tab() -> dbc.Container:
     """Build the Register Book screen.
 
     Returns:
         The tab content.
     """
-    today = services.utc_today().isoformat()
     form = dbc.Form(
         [
-            dbc.Row(
-                [
-                    dbc.Col(
-                        _form_field(
-                            "Título",
-                            dbc.Input(id=Ids.TITLE, placeholder="Ex.: Duna", maxLength=255),
-                            Ids.TITLE_FEEDBACK,
-                        ),
-                        xs=12,
-                        md=6,
-                    ),
-                    dbc.Col(
-                        _form_field(
-                            "Autor",
-                            dbc.Input(
-                                id=Ids.AUTHOR, placeholder="Ex.: Frank Herbert", maxLength=255
-                            ),
-                            Ids.AUTHOR_FEEDBACK,
-                        ),
-                        xs=12,
-                        md=6,
-                    ),
-                ]
-            ),
-            dbc.Row(
-                [
-                    dbc.Col(
-                        _form_field(
-                            "Data de publicação",
-                            # Native date input instead of dcc.DatePickerSingle: the user
-                            # can type the date directly (DD/MM/AAAA in a pt-BR browser),
-                            # the calendar follows the browser language and the value is
-                            # always ISO (YYYY-MM-DD). `max` blocks future dates in the
-                            # calendar; typed dates are validated again on submit.
-                            dbc.Input(
-                                id=Ids.PUBLICATION_DATE,
-                                type="date",
-                                max=today,
-                                className="date-input",
-                            ),
-                            Ids.PUBLICATION_DATE_FEEDBACK,
-                        ),
-                        xs=12,
-                        md=6,
-                    ),
-                    dbc.Col(
-                        _form_field(
-                            "Data de cadastro (opcional)",
-                            html.Div(
-                                [
-                                    dbc.Input(
-                                        id=Ids.CREATED_DATE,
-                                        type="date",
-                                        max=today,
-                                        className="date-input",
-                                    ),
-                                    dbc.Input(
-                                        id=Ids.CREATED_TIME, type="time", className="time-input"
-                                    ),
-                                ],
-                                className="d-flex gap-2",
-                            ),
-                            Ids.CREATED_AT_FEEDBACK,
-                            help_text="Deixe em branco para usar a data e hora atuais",
-                        ),
-                        xs=12,
-                        md=6,
-                    ),
-                ]
-            ),
-            _form_field(
-                "Resumo",
-                dbc.Textarea(
-                    id=Ids.SUMMARY,
-                    placeholder="Sobre o que é este livro?",
-                    # Same cap as the API, so the user cannot type more than it accepts.
-                    maxLength=services.MAX_SUMMARY_LENGTH,
-                    rows=5,
-                    style={"resize": "vertical"},
-                ),
-                Ids.SUMMARY_FEEDBACK,
+            *book_form_fields(
+                REGISTER_FORM,
+                "Data de cadastro (opcional)",
+                "Deixe em branco para usar a data e hora atuais",
             ),
             html.Div(
                 dbc.Button(
@@ -433,7 +536,7 @@ def search_tab() -> dbc.Container:
                         html.Small(
                             [
                                 icon("hand-index", "me-1"),
-                                "Clique em uma linha para ver os detalhes",
+                                "Clique em uma linha para ver, editar ou excluir",
                             ],
                             className="text-muted d-none d-md-inline",
                         ),
@@ -482,6 +585,7 @@ def search_tab() -> dbc.Container:
     return dbc.Container(
         [
             filters,
+            html.Div(id=Ids.BOOK_ACTION_ALERT),
             html.Div(id=Ids.SEARCH_ALERT),
             dcc.Loading(results, type="default", delay_show=150),
         ],
@@ -551,7 +655,25 @@ def details_modal() -> dbc.Modal:
             dbc.ModalHeader(dbc.ModalTitle(id=Ids.DETAILS_TITLE)),
             dbc.ModalBody(dcc.Loading(html.Div(id=Ids.DETAILS_BODY), type="dot")),
             dbc.ModalFooter(
-                dbc.Button("Fechar", id=Ids.DETAILS_CLOSE, color="secondary", n_clicks=0)
+                [
+                    dbc.Button(
+                        [icon("trash"), "Excluir"],
+                        id=Ids.DETAILS_DELETE,
+                        color="danger",
+                        outline=True,
+                        n_clicks=0,
+                        disabled=True,
+                        className="me-auto",
+                    ),
+                    dbc.Button(
+                        [icon("pencil-square"), "Editar"],
+                        id=Ids.DETAILS_EDIT,
+                        color="primary",
+                        n_clicks=0,
+                        disabled=True,
+                    ),
+                    dbc.Button("Fechar", id=Ids.DETAILS_CLOSE, color="secondary", n_clicks=0),
+                ]
             ),
         ],
         id=Ids.DETAILS_MODAL,
@@ -560,6 +682,113 @@ def details_modal() -> dbc.Modal:
         scrollable=True,
         size="lg",
     )
+
+
+def edit_modal() -> dbc.Modal:
+    """Build the (initially closed) Edit Book modal.
+
+    The fields are filled with the current book when the modal opens.
+
+    Returns:
+        The modal component.
+    """
+    return dbc.Modal(
+        [
+            dbc.ModalHeader(dbc.ModalTitle([icon("pencil-square"), "Editar livro"])),
+            dbc.ModalBody(
+                [
+                    html.Div(id=Ids.EDIT_ALERT),
+                    dbc.Form(book_form_fields(EDIT_FORM, "Data de cadastro")),
+                ]
+            ),
+            dbc.ModalFooter(
+                [
+                    dbc.Button(
+                        "Cancelar", id=Ids.EDIT_CANCEL, color="secondary", outline=True, n_clicks=0
+                    ),
+                    dbc.Button(
+                        [
+                            html.Span(
+                                id=Ids.EDIT_SAVE_SPINNER,
+                                className="spinner-border spinner-border-sm me-2",
+                                style=SPINNER_HIDDEN,
+                            ),
+                            icon("check-circle"),
+                            "Salvar alterações",
+                        ],
+                        id=Ids.EDIT_SAVE,
+                        color="primary",
+                        n_clicks=0,
+                    ),
+                ]
+            ),
+        ],
+        id=Ids.EDIT_MODAL,
+        is_open=False,
+        centered=True,
+        scrollable=True,
+        size="lg",
+        # Clicking outside must not throw away what the user typed.
+        backdrop="static",
+    )
+
+
+def delete_modal() -> dbc.Modal:
+    """Build the (initially closed) delete confirmation modal.
+
+    Returns:
+        The modal component.
+    """
+    return dbc.Modal(
+        [
+            dbc.ModalHeader(dbc.ModalTitle([icon("trash"), "Excluir livro"])),
+            dbc.ModalBody([html.Div(id=Ids.DELETE_ALERT), html.P(id=Ids.DELETE_MESSAGE)]),
+            dbc.ModalFooter(
+                [
+                    dbc.Button(
+                        "Cancelar",
+                        id=Ids.DELETE_CANCEL,
+                        color="secondary",
+                        outline=True,
+                        n_clicks=0,
+                    ),
+                    dbc.Button(
+                        [
+                            html.Span(
+                                id=Ids.DELETE_SPINNER,
+                                className="spinner-border spinner-border-sm me-2",
+                                style=SPINNER_HIDDEN,
+                            ),
+                            icon("trash"),
+                            "Excluir definitivamente",
+                        ],
+                        id=Ids.DELETE_CONFIRM,
+                        color="danger",
+                        n_clicks=0,
+                    ),
+                ]
+            ),
+        ],
+        id=Ids.DELETE_MODAL,
+        is_open=False,
+        centered=True,
+    )
+
+
+def delete_message(book: Mapping[str, Any]) -> list[Any]:
+    """Build the confirmation text of the delete modal.
+
+    Args:
+        book: The book about to be deleted.
+
+    Returns:
+        The paragraph children.
+    """
+    return [
+        "Tem certeza de que deseja excluir ",
+        html.Strong(f'"{book.get(services.FIELD_TITLE, "")}"'),
+        f", de {book.get(services.FIELD_AUTHOR, '')}? Esta ação não pode ser desfeita.",
+    ]
 
 
 # --- Dashboard ----------------------------------------------------------------
@@ -742,6 +971,16 @@ def navbar() -> dbc.Navbar:
                     ],
                     className="d-flex align-items-center fs-4",
                 ),
+                dbc.Button(
+                    [icon("download"), "Coleção Postman"],
+                    id=Ids.POSTMAN_BUTTON,
+                    color="light",
+                    outline=True,
+                    size="sm",
+                    n_clicks=0,
+                    title="Baixar a coleção do Postman para testar a API",
+                ),
+                dcc.Download(id=Ids.POSTMAN_DOWNLOAD),
             ],
             fluid="lg",
         ),
@@ -767,6 +1006,7 @@ def build_layout() -> html.Div:
             dcc.Store(id=Ids.BOOKS_VERSION, data=0),
             dcc.Store(id=Ids.SEARCH_STATE, data=services.SearchState().to_dict()),
             dcc.Store(id=Ids.SEARCH_BOOKS, data=[]),
+            dcc.Store(id=Ids.CURRENT_BOOK),
             navbar(),
             dbc.Container(
                 [
@@ -781,6 +1021,8 @@ def build_layout() -> html.Div:
                         className="mb-4 nav-tabs-modern",
                     ),
                     details_modal(),
+                    edit_modal(),
+                    delete_modal(),
                     html.Footer(
                         [
                             html.Div(

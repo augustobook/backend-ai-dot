@@ -1,4 +1,4 @@
-"""Use cases for registering and searching books."""
+"""Use cases for registering, searching, editing and deleting books."""
 
 import logging
 from collections.abc import Callable
@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from app.core.exceptions import BookNotFoundError
 from app.models.book import Book
 from app.repositories.book_repository import BookRepositoryProtocol
-from app.schemas.book import BookCreate
+from app.schemas.book import BookCreate, BookUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,42 @@ class BookService:
             logger.warning("Book not found: id=%s", book_id)
             raise BookNotFoundError(book_id)
         return book
+
+    def update_book(self, book_id: int, data: BookUpdate) -> Book:
+        """Change the fields of an existing book.
+
+        Only the fields present in the payload are changed.
+
+        Args:
+            book_id: The id of the book.
+            data: The validated partial payload.
+
+        Returns:
+            The updated book.
+
+        Raises:
+            BookNotFoundError: If no book has the given id.
+        """
+        book = self.get_book(book_id)
+        changes = data.model_dump(exclude_unset=True)
+        for field, value in changes.items():
+            setattr(book, field, value)
+        updated = self._repository.update(book)
+        logger.info("Book updated: id=%s fields=%s", updated.id, sorted(changes))
+        return updated
+
+    def delete_book(self, book_id: int) -> None:
+        """Remove a book from the library.
+
+        Args:
+            book_id: The id of the book.
+
+        Raises:
+            BookNotFoundError: If no book has the given id.
+        """
+        book = self.get_book(book_id)
+        self._repository.delete(book)
+        logger.info("Book deleted: id=%s title=%r", book_id, book.title)
 
     def search_books(
         self,

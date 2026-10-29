@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Library API (Biblioteca Virtual)",
-    "description": "Every request of the Library API (FastAPI) used by the Biblioteca Virtual frontend.\n\n**Setup**\n1. Import this collection and `library-api.local.postman_environment.json`.\n2. Select the *Library API - local* environment.\n3. If the backend `.env` sets `API_KEY`, paste the same value into the environment's `apiKey`. Leave it empty when the API has no key.\n4. Run folder 2 before 4 and 5 (they need data and the saved `bookId`).\n\nAuthentication is configured once on the collection (API key in the `X-API-Key` header); requests that must not send it override it with *No Auth*.",
+    "description": "Every request of the Library API (FastAPI) used by the Biblioteca Virtual frontend.\n\n**Setup**\n1. Import this collection and `library-api.local.postman_environment.json`.\n2. Select the *Library API - local* environment.\n3. If the backend `.env` sets `API_KEY`, paste the same value into the environment's `apiKey`. Leave it empty when the API has no key.\n4. Run folder 2 before 4, 5 and 6 (they need data and the saved `bookId`).\n\nAuthentication is configured once on the collection (API key in the `X-API-Key` header); requests that must not send it override it with *No Auth*.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -28,6 +28,11 @@
     {
       "key": "bookId",
       "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "deleteBookId",
+      "value": "",
       "type": "string"
     }
   ],
@@ -1104,7 +1109,450 @@
       ]
     },
     {
-      "name": "6. Security",
+      "name": "6. Edit & delete (PATCH / DELETE /books/{book_id})",
+      "description": "Not required by the assignment (which asks only for registering and searching), but included to make the API a complete CRUD.\n\nEdits use the `bookId` saved in folder 2. Deletion first registers its own book (saved as `deleteBookId`) so the other folders keep their data.",
+      "item": [
+        {
+          "name": "Edit book (partial update)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{bookId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{bookId}}"
+              ]
+            },
+            "description": "Only the fields sent change; the others keep their value.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"summary\": \"Edited through Postman.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const book = pm.response.json();",
+                  "pm.test(\"Summary changed\", () => pm.expect(book.summary).to.eql(\"Edited through Postman.\"));",
+                  "pm.test(\"Title kept\", () => pm.expect(book.title).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Edit created_at (converted to UTC)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{bookId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{bookId}}"
+              ]
+            },
+            "description": "Datetimes with a timezone are stored and returned in UTC.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"created_at\": \"2024-05-10T11:30:00-03:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Stored in UTC\", () => pm.expect(pm.response.json().created_at).to.match(/^2024-05-10T14:30:00(\\.0+)?Z$/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Edit: blank title (422)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{bookId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{bookId}}"
+              ]
+            },
+            "description": "The same rules as registration apply.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"   \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Edit: null value (422)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{bookId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{bookId}}"
+              ]
+            },
+            "description": "`null` is rejected: omit a field to keep it unchanged.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"author\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Edit: publication_date in the future (422)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{bookId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{bookId}}"
+              ]
+            },
+            "description": "Future dates are rejected.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"publication_date\": \"2999-01-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"Mentions the future\", () => pm.expect(pm.response.text()).to.include(\"future\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Edit: unknown field (422)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{bookId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{bookId}}"
+              ]
+            },
+            "description": "The id cannot be changed; unknown fields are rejected.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": 123\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Edit: book not found (404)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books/999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "999999"
+              ]
+            },
+            "description": "Unknown ids return 404.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Nobody\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create book to delete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "Registers a throwaway book and saves its id as `deleteBookId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Book to delete\",\n  \"author\": \"Postman\",\n  \"publication_date\": \"2020-01-01\",\n  \"summary\": \"Created only to test deletion.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"deleteBookId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete book (204)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{deleteBookId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{deleteBookId}}"
+              ]
+            },
+            "description": "Deletes the book; the response has no body."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));",
+                  "pm.test(\"Empty body\", () => pm.expect(pm.response.text()).to.eql(\"\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deleted book is gone (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{deleteBookId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{deleteBookId}}"
+              ]
+            },
+            "description": "After deletion, the id is no longer found."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete again (404)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{deleteBookId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{deleteBookId}}"
+              ]
+            },
+            "description": "Deleting a missing book returns 404."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Security",
       "description": "Requests that exercise the security layer (see the Security section of the README). The API key tests only apply when the server sets `API_KEY`.",
       "item": [
         {

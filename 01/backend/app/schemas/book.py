@@ -1,4 +1,4 @@
-"""Pydantic schemas for creating and reading books."""
+"""Pydantic schemas for creating, updating and reading books."""
 
 from datetime import UTC, date, datetime
 from typing import Annotated
@@ -11,6 +11,43 @@ MAX_SUMMARY_LENGTH = 5000
 NonEmptyStr = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_TEXT_LENGTH)
 ]
+
+
+def _check_publication_date(value: date) -> date:
+    """Reject publication dates later than today (UTC).
+
+    Args:
+        value: The publication date sent by the client.
+
+    Returns:
+        The unchanged publication date.
+
+    Raises:
+        ValueError: If the date is in the future.
+    """
+    if value > datetime.now(UTC).date():
+        raise ValueError("publication_date cannot be in the future")
+    return value
+
+
+def _check_created_at(value: datetime) -> datetime:
+    """Normalize `created_at` to UTC and reject future values.
+
+    Args:
+        value: The registration datetime sent by the client.
+
+    Returns:
+        The datetime converted to UTC (naive values are treated as UTC).
+
+    Raises:
+        ValueError: If the datetime is in the future.
+    """
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    value = value.astimezone(UTC)
+    if value > datetime.now(UTC):
+        raise ValueError("created_at cannot be in the future")
+    return value
 
 
 class BookBase(BaseModel):
@@ -61,43 +98,85 @@ class BookCreate(BookBase):
     @field_validator("publication_date")
     @classmethod
     def publication_date_not_in_future(cls, value: date) -> date:
-        """Reject publication dates later than today (UTC).
-
-        Args:
-            value: The publication date sent by the client.
-
-        Returns:
-            The unchanged publication date.
-
-        Raises:
-            ValueError: If the date is in the future.
-        """
-        if value > datetime.now(UTC).date():
-            raise ValueError("publication_date cannot be in the future")
-        return value
+        """Reject publication dates later than today (UTC)."""
+        return _check_publication_date(value)
 
     @field_validator("created_at")
     @classmethod
     def created_at_in_utc_and_not_in_future(cls, value: datetime | None) -> datetime | None:
-        """Normalize `created_at` to UTC and reject future values.
+        """Normalize `created_at` to UTC and reject future values."""
+        return None if value is None else _check_created_at(value)
+
+
+class BookUpdate(BaseModel):
+    """Payload used to edit an existing book (partial update).
+
+    Only the fields sent are changed; omitted fields keep their stored value.
+    `null` is rejected for every field, since none of them can be empty, and
+    unknown fields (such as `id`) are rejected with 422.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: NonEmptyStr | None = Field(
+        default=None,
+        description="New title. Leading and trailing spaces are removed.",
+        examples=["Harry Potter and the Chamber of Secrets"],
+    )
+    author: NonEmptyStr | None = Field(
+        default=None,
+        description="New author. Leading and trailing spaces are removed.",
+        examples=["J. K. Rowling"],
+    )
+    publication_date: date | None = Field(
+        default=None,
+        description="New publication date (YYYY-MM-DD). Cannot be in the future.",
+        examples=["1998-07-02"],
+    )
+    summary: str | None = Field(
+        default=None,
+        max_length=MAX_SUMMARY_LENGTH,
+        description=f"New summary (up to {MAX_SUMMARY_LENGTH} characters).",
+        examples=["Harry's second year at Hogwarts."],
+    )
+    created_at: datetime | None = Field(
+        default=None,
+        description=(
+            "New registration date and time (ISO 8601). Values without a timezone are "
+            "treated as UTC. Cannot be in the future."
+        ),
+        examples=["2024-05-10T14:30:00Z"],
+    )
+
+    @field_validator("title", "author", "publication_date", "summary", "created_at", mode="before")
+    @classmethod
+    def reject_null(cls, value: object) -> object:
+        """Reject explicit `null`: omit a field to keep it unchanged.
 
         Args:
-            value: The registration datetime sent by the client, if any.
+            value: The raw value sent by the client.
 
         Returns:
-            The datetime converted to UTC, or `None` when omitted.
+            The unchanged value.
 
         Raises:
-            ValueError: If the datetime is in the future.
+            ValueError: If the value is `None`.
         """
         if value is None:
-            return None
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=UTC)
-        value = value.astimezone(UTC)
-        if value > datetime.now(UTC):
-            raise ValueError("created_at cannot be in the future")
+            raise ValueError("field cannot be null; omit it to keep the current value")
         return value
+
+    @field_validator("publication_date")
+    @classmethod
+    def publication_date_not_in_future(cls, value: date | None) -> date | None:
+        """Reject publication dates later than today (UTC)."""
+        return None if value is None else _check_publication_date(value)
+
+    @field_validator("created_at")
+    @classmethod
+    def created_at_in_utc_and_not_in_future(cls, value: datetime | None) -> datetime | None:
+        """Normalize `created_at` to UTC and reject future values."""
+        return None if value is None else _check_created_at(value)
 
 
 class BookRead(BookBase):

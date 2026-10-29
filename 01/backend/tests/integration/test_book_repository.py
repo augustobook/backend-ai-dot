@@ -39,6 +39,30 @@ def test_get_by_id_returns_none_for_missing_book(repository: BookRepository) -> 
     assert repository.get_by_id(999) is None
 
 
+def test_update_persists_changes(repository: BookRepository, db_session: Session) -> None:
+    """Changes made to a loaded book are saved by `update`."""
+    book = repository.add(make_book(title="Old"))
+    book.title = "New"
+
+    repository.update(book)
+
+    db_session.expire_all()
+    loaded = repository.get_by_id(book.id)
+    assert loaded is not None
+    assert loaded.title == "New"
+
+
+def test_delete_removes_book(repository: BookRepository, db_session: Session) -> None:
+    """A deleted book is no longer stored."""
+    book = repository.add(make_book())
+    book_id = book.id
+
+    repository.delete(book)
+
+    db_session.expire_all()
+    assert repository.get_by_id(book_id) is None
+
+
 def test_created_at_round_trips_as_utc(repository: BookRepository, db_session: Session) -> None:
     """Datetimes in other timezones are stored and read back as UTC."""
     brazil = timezone(timedelta(hours=-3))

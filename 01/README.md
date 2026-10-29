@@ -34,7 +34,7 @@ and explore statistics. It has two independent applications, each with its own
 ├── backend/
 │   ├── app/              # api/ (routes, middleware), services/, repositories/, models/, db/, core/
 │   ├── tests/            # unit/, integration/, api/
-│   ├── postman/          # Postman collection (34 requests with tests) + local environment
+│   ├── postman/          # Postman collection (45 requests with tests) + local environment
 │   ├── .env.example
 │   └── Dockerfile
 ├── frontend/

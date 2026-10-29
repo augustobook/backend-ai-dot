@@ -8,7 +8,7 @@ import pytest
 from app.core.exceptions import BookNotFoundError
 from app.models.book import Book
 from app.repositories.book_repository import BookRepositoryProtocol
-from app.schemas.book import BookCreate
+from app.schemas.book import BookCreate, BookUpdate
 from app.services.book_service import BookService, utc_now
 from tests.factories import make_book
 
@@ -34,6 +34,14 @@ class InMemoryBookRepository:
     def get_by_id(self, book_id: int) -> Book | None:
         """Return the stored book or `None`."""
         return self.books.get(book_id)
+
+    def update(self, book: Book) -> Book:
+        """Objects are stored by reference, so changes are already kept."""
+        return book
+
+    def delete(self, book: Book) -> None:
+        """Remove the book from the store."""
+        del self.books[book.id]
 
     def search(self, *, title: str | None, author: str | None, skip: int, limit: int) -> list[Book]:
         """Filter stored books by case-insensitive containment."""
@@ -132,6 +140,56 @@ def test_get_book_raises_not_found_for_missing_id(
     assert exc.value.book_id == 42
     assert str(exc.value) == "Book with id 42 not found"
     assert "Book not found" in caplog.text
+
+
+def test_update_book_changes_only_sent_fields(
+    service: BookService, repository: InMemoryBookRepository
+) -> None:
+    """Fields left out of the payload keep their stored value."""
+    stored = repository.add(make_book(title="Old", author="Author", summary="Keep me"))
+
+    updated = service.update_book(stored.id, BookUpdate(title="New"))
+
+    assert updated is stored
+    assert updated.title == "New"
+    assert updated.author == "Author"
+    assert updated.summary == "Keep me"
+
+
+def test_update_book_logs_changed_fields(
+    service: BookService, repository: InMemoryBookRepository, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Editing a book writes an info log entry naming the changed fields."""
+    stored = repository.add(make_book())
+
+    with caplog.at_level(logging.INFO, logger="app"):
+        service.update_book(stored.id, BookUpdate(author="Someone", summary=""))
+
+    assert "Book updated" in caplog.text
+    assert "['author', 'summary']" in caplog.text
+
+
+def test_update_book_raises_not_found_for_missing_id(service: BookService) -> None:
+    """Editing an unknown id raises `BookNotFoundError`."""
+    with pytest.raises(BookNotFoundError):
+        service.update_book(42, BookUpdate(title="New"))
+
+
+def test_delete_book_removes_it(service: BookService, repository: InMemoryBookRepository) -> None:
+    """A deleted book can no longer be found."""
+    stored = repository.add(make_book())
+
+    service.delete_book(stored.id)
+
+    assert stored.id not in repository.books
+    with pytest.raises(BookNotFoundError):
+        service.get_book(stored.id)
+
+
+def test_delete_book_raises_not_found_for_missing_id(service: BookService) -> None:
+    """Deleting an unknown id raises `BookNotFoundError`."""
+    with pytest.raises(BookNotFoundError):
+        service.delete_book(42)
 
 
 def test_search_books_filters_by_title_and_author(

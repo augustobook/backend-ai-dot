@@ -265,6 +265,126 @@ def test_get_book_with_invalid_id_returns_422(client: TestClient, bad_id: str) -
     assert response.status_code == 422
 
 
+# --- Update ---------------------------------------------------------------
+
+
+def test_update_book_changes_sent_fields_only(client: TestClient, create_book: CreateBook) -> None:
+    """PATCH changes the given fields, keeps the others and persists the result."""
+    created = create_book(title="Old title", summary="Keep me")
+
+    response = client.patch(
+        f"/books/{created['id']}",
+        json={"title": "  New title  ", "publication_date": "2001-02-03"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["title"] == "New title"
+    assert body["publication_date"] == "2001-02-03"
+    assert body["author"] == created["author"]
+    assert body["summary"] == "Keep me"
+    assert body["created_at"] == created["created_at"]
+    assert client.get(f"/books/{created['id']}").json() == body
+
+
+def test_update_book_created_at_is_stored_in_utc(
+    client: TestClient, create_book: CreateBook
+) -> None:
+    """An edited `created_at` is converted to UTC like on registration."""
+    created = create_book()
+
+    response = client.patch(
+        f"/books/{created['id']}", json={"created_at": "2024-05-10T11:30:00-03:00"}
+    )
+
+    assert response.status_code == 200
+    assert _parse(response.json()["created_at"]) == datetime(2024, 5, 10, 14, 30, tzinfo=UTC)
+
+
+def test_update_book_with_empty_payload_changes_nothing(
+    client: TestClient, create_book: CreateBook
+) -> None:
+    """An empty PATCH is accepted and returns the book unchanged."""
+    created = create_book()
+
+    response = client.patch(f"/books/{created['id']}", json={})
+
+    assert response.status_code == 200
+    assert response.json() == created
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"title": "   "},
+        {"author": ""},
+        {"title": None},
+        {"summary": None},
+        {"publication_date": "not-a-date"},
+        {"id": 99},
+    ],
+)
+def test_update_book_invalid_payload_returns_422(
+    client: TestClient, create_book: CreateBook, payload: dict[str, Any]
+) -> None:
+    """Blank text, `null`, bad dates and unknown fields are rejected."""
+    created = create_book()
+
+    response = client.patch(f"/books/{created['id']}", json=payload)
+
+    assert response.status_code == 422
+    assert client.get(f"/books/{created['id']}").json() == created
+
+
+@pytest.mark.parametrize("field", ["publication_date", "created_at"])
+def test_update_book_future_dates_return_422(
+    client: TestClient, create_book: CreateBook, field: str
+) -> None:
+    """Dates in the future are rejected on edit as on registration."""
+    created = create_book()
+    future = datetime.now(UTC) + timedelta(days=1)
+    value = future.date().isoformat() if field == "publication_date" else future.isoformat()
+
+    response = client.patch(f"/books/{created['id']}", json={field: value})
+
+    assert response.status_code == 422
+    assert "future" in response.text
+
+
+def test_update_book_by_unknown_id_returns_404(client: TestClient) -> None:
+    """Editing an unknown id returns 404."""
+    response = client.patch("/books/42", json={"title": "New"})
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Book with id 42 not found"}
+
+
+# --- Delete ---------------------------------------------------------------
+
+
+def test_delete_book_returns_204_and_removes_it(
+    client: TestClient, create_book: CreateBook
+) -> None:
+    """DELETE removes the book; it then disappears from lookups and searches."""
+    kept = create_book(title="Kept")
+    deleted = create_book(title="Deleted")
+
+    response = client.delete(f"/books/{deleted['id']}")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert client.get(f"/books/{deleted['id']}").status_code == 404
+    assert client.get("/books").json() == [kept]
+
+
+def test_delete_book_by_unknown_id_returns_404(client: TestClient) -> None:
+    """Deleting an unknown id returns 404."""
+    response = client.delete("/books/42")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Book with id 42 not found"}
+
+
 # --- Documentation --------------------------------------------------------
 
 
@@ -273,4 +393,5 @@ def test_openapi_documents_endpoints_and_404(client: TestClient) -> None:
     schema = client.get("/openapi.json").json()
 
     assert {"/books", "/books/{book_id}", "/health"} <= set(schema["paths"])
-    assert "404" in schema["paths"]["/books/{book_id}"]["get"]["responses"]
+    for method in ("get", "patch", "delete"):
+        assert "404" in schema["paths"]["/books/{book_id}"][method]["responses"]

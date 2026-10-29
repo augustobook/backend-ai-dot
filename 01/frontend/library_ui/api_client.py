@@ -249,6 +249,38 @@ class BooksApiClient:
         response = self._request("GET", f"/books/{book_id}")
         return cast(Book, response.json())
 
+    def update_book(self, book_id: int, payload: Mapping[str, Any]) -> Book:
+        """Change the fields of a book (`PATCH /books/{book_id}`).
+
+        Args:
+            book_id: Id of the book.
+            payload: Only the fields to change; omitted fields keep their value.
+
+        Returns:
+            The updated book.
+
+        Raises:
+            ApiNotFoundError: If the book does not exist.
+            ApiValidationError: If the API rejects the payload.
+            ApiUnavailableError: If the API cannot be reached.
+            ApiResponseError: On unexpected errors.
+        """
+        response = self._request("PATCH", f"/books/{book_id}", json=dict(payload))
+        return cast(Book, response.json())
+
+    def delete_book(self, book_id: int) -> None:
+        """Delete a book (`DELETE /books/{book_id}`).
+
+        Args:
+            book_id: Id of the book.
+
+        Raises:
+            ApiNotFoundError: If the book does not exist.
+            ApiUnavailableError: If the API cannot be reached.
+            ApiResponseError: On unexpected errors.
+        """
+        self._request("DELETE", f"/books/{book_id}")
+
     def fetch_all_books(self, *, title: str | None = None, author: str | None = None) -> list[Book]:
         """Return every book, following the API pagination.
 

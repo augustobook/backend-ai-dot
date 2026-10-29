@@ -1,5 +1,6 @@
 """Tests for the pure functions in `library_ui.services`."""
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -148,12 +149,78 @@ def test_build_payload_handles_missing_summary() -> None:
     assert services.build_book_payload(valid_form(summary=None), None)["summary"] == ""
 
 
+# --- Edit form ----------------------------------------------------------------
+
+
+def test_utc_to_local_parts_converts_to_user_timezone() -> None:
+    """The stored UTC instant is shown as the user's local date and time."""
+    parts = services.utc_to_local_parts("2024-05-10T01:30:00Z", "America/Sao_Paulo")
+
+    assert parts == ("2024-05-09", "22:30")
+
+
+@pytest.mark.parametrize("value", [None, "", "garbage"])
+def test_utc_to_local_parts_invalid_values(value: str | None) -> None:
+    """Missing or invalid datetimes leave the inputs empty."""
+    assert services.utc_to_local_parts(value, "UTC") == ("", "")
+
+
+def test_book_to_form_fills_every_field() -> None:
+    """The edit form starts with the stored values."""
+    book = make_book(1, title="Dune", summary="Spice.", created_at="2024-05-10T14:30:00Z")
+
+    form = services.book_to_form(book, "America/Sao_Paulo")
+
+    assert form == BookForm(
+        title="Dune",
+        author="Author",
+        publication_date="2000-01-01",
+        summary="Spice.",
+        created_date="2024-05-10",
+        created_time="11:30",
+    )
+
+
+def test_build_update_payload_unchanged_form_is_empty() -> None:
+    """Saving without changes sends nothing, not even a truncated `created_at`."""
+    book = make_book(1, created_at="2024-05-10T14:30:45Z")
+
+    payload = services.build_update_payload(services.book_to_form(book, "UTC"), "UTC", book)
+
+    assert payload == {}
+
+
+def test_build_update_payload_sends_only_changed_fields() -> None:
+    """Only edited fields are sent, `created_at` converted to UTC."""
+    book = make_book(1, title="Old", created_at="2024-05-10T14:30:00Z")
+    form = services.book_to_form(book, "America/Sao_Paulo")
+    edited = BookForm(
+        title=" New ",
+        author=form.author,
+        publication_date=form.publication_date,
+        summary=form.summary,
+        created_date=form.created_date,
+        created_time="12:00",
+    )
+
+    payload = services.build_update_payload(edited, "America/Sao_Paulo", book)
+
+    assert payload == {"title": "New", "created_at": "2024-05-10T15:00:00Z"}
+
+
 # --- Validation ---------------------------------------------------------------
 
 
 def test_validate_valid_form_has_no_errors() -> None:
     """A complete form passes validation."""
     assert services.validate_book_form(valid_form(), "UTC", now=NOW) == {}
+
+
+def test_validate_requires_created_at_when_editing() -> None:
+    """When editing, "Created At" cannot be cleared."""
+    errors = services.validate_book_form(valid_form(), "UTC", now=NOW, require_created_at=True)
+
+    assert errors == {"created_at": "Informe a data de cadastro."}
 
 
 def test_validate_required_fields() -> None:
@@ -474,3 +541,52 @@ def test_settings_from_env() -> None:
     assert settings.debug is True
     assert settings.search_page_size == 5
     assert Settings.from_env({}) == Settings()
+
+
+# --- Postman collection -------------------------------------------------------
+
+BACKEND_COLLECTION = (
+    Path(__file__).parents[2] / "backend" / "postman" / services.POSTMAN_DOWNLOAD_NAME
+)
+
+
+@pytest.mark.skipif(not BACKEND_COLLECTION.is_file(), reason="backend not checked out")
+def test_bundled_postman_collection_matches_backend() -> None:
+    """The frontend ships the same collection kept in `backend/postman/`."""
+    bundled = services.POSTMAN_COLLECTION_FILE.read_text(encoding="utf-8")
+
+    assert bundled == BACKEND_COLLECTION.read_text(encoding="utf-8")
+
+
+def test_build_postman_collection_sets_url_and_key() -> None:
+    """`baseUrl` and `apiKey` become collection variables; others are kept."""
+    template = {"info": {}, "variable": [{"key": "bookId", "value": "1"}]}
+
+    collection = services.build_postman_collection(template, "https://api.example", "k3y")
+
+    values = {v["key"]: v["value"] for v in collection["variable"]}
+    assert values == {"baseUrl": "https://api.example", "apiKey": "k3y", "bookId": "1"}
+    assert template["variable"] == [{"key": "bookId", "value": "1"}]  # not modified
+
+
+def test_load_postman_collection_without_key_leaves_it_blank() -> None:
+    """The bundled file loads and, without a key, `apiKey` stays empty."""
+    collection = json.loads(services.load_postman_collection("http://localhost:8000", None))
+
+    values = {v["key"]: v["value"] for v in collection["variable"]}
+    assert values["baseUrl"] == "http://localhost:8000"
+    assert values["apiKey"] == ""
+    assert any(item["name"].startswith("6. Edit") for item in collection["item"])
+
+
+def test_settings_postman_options() -> None:
+    """The public URL defaults to the API URL; embedding the key is opt-in."""
+    assert Settings.from_env({"API_BASE_URL": "http://api:8000"}).postman_base_url == (
+        "http://api:8000"
+    )
+    settings = Settings.from_env(
+        {"PUBLIC_API_URL": "https://api.example/", "POSTMAN_INCLUDE_API_KEY": "true"}
+    )
+    assert settings.postman_base_url == "https://api.example"
+    assert settings.postman_include_api_key is True
+    assert Settings().postman_include_api_key is False

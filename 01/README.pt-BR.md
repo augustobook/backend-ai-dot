@@ -34,7 +34,7 @@ autor e vê estatísticas. São duas aplicações independentes, cada uma com se
 ├── backend/
 │   ├── app/              # api/ (rotas, middleware), services/, repositories/, models/, db/, core/
 │   ├── tests/            # unit/, integration/, api/
-│   ├── postman/          # Collection do Postman (34 requisições com testes) + environment local
+│   ├── postman/          # Collection do Postman (45 requisições com testes) + environment local
 │   ├── .env.example
 │   └── Dockerfile
 ├── frontend/

@@ -1,4 +1,4 @@
-"""Endpoints for registering and searching books.
+"""Endpoints for registering, searching, editing and deleting books.
 
 Routes only translate HTTP into service calls; business rules live in
 `BookService` and domain errors are turned into HTTP responses by the
@@ -11,7 +11,7 @@ from fastapi import APIRouter, Path, Query, status
 
 from app.api.dependencies import BookServiceDep
 from app.core.config import get_settings
-from app.schemas.book import BookCreate, BookRead
+from app.schemas.book import BookCreate, BookRead, BookUpdate
 from app.schemas.common import ErrorResponse
 
 # Errors that any /books endpoint may return because of the security layer.
@@ -154,3 +154,62 @@ def get_book(
         BookNotFoundError: If the book does not exist (converted to HTTP 404).
     """
     return BookRead.model_validate(service.get_book(book_id))
+
+
+@router.patch(
+    "/{book_id}",
+    response_model=BookRead,
+    status_code=status.HTTP_200_OK,
+    summary="Edit a book",
+    description=(
+        "Change one or more fields of an existing book. Only the fields sent are changed; "
+        "omitted fields keep their current value. The same rules as registration apply: "
+        "`title` and `author` cannot be blank, and `publication_date` and `created_at` "
+        "cannot be in the future. `null` values and unknown fields are rejected."
+    ),
+    response_description="The book with its updated fields.",
+    responses=NOT_FOUND_RESPONSE,
+)
+def update_book(
+    book_id: Annotated[int, Path(ge=1, description="Id of the book.", examples=[1])],
+    payload: BookUpdate,
+    service: BookServiceDep,
+) -> BookRead:
+    """Edit an existing book.
+
+    Args:
+        book_id: Id of the book.
+        payload: The validated fields to change.
+        service: The book service.
+
+    Returns:
+        The updated book.
+
+    Raises:
+        BookNotFoundError: If the book does not exist (converted to HTTP 404).
+    """
+    return BookRead.model_validate(service.update_book(book_id, payload))
+
+
+@router.delete(
+    "/{book_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a book",
+    description="Permanently remove a book from the library, or 404 if it does not exist.",
+    response_description="The book was deleted (no body).",
+    responses=NOT_FOUND_RESPONSE,
+)
+def delete_book(
+    book_id: Annotated[int, Path(ge=1, description="Id of the book.", examples=[1])],
+    service: BookServiceDep,
+) -> None:
+    """Delete a book.
+
+    Args:
+        book_id: Id of the book.
+        service: The book service.
+
+    Raises:
+        BookNotFoundError: If the book does not exist (converted to HTTP 404).
+    """
+    service.delete_book(book_id)

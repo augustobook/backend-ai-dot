@@ -71,14 +71,71 @@ def error_alert(exc: ApiError) -> Any:
     return layout.alert("Ocorreu um erro ao se comunicar com a API. Tente novamente.")
 
 
+def form_feedback_outputs(ids: layout.BookFormIds) -> dict[str, Output]:
+    """Return the feedback outputs of a book form, keyed like `form_feedback`.
+
+    Args:
+        ids: Component ids of the form (Register or Edit).
+
+    Returns:
+        The `invalid` flags and inline messages of every field.
+    """
+    return {
+        "title_invalid": Output(ids.title, "invalid"),
+        "title_feedback": Output(ids.title_feedback, "children"),
+        "author_invalid": Output(ids.author, "invalid"),
+        "author_feedback": Output(ids.author_feedback, "children"),
+        "publication_date_invalid": Output(ids.publication_date, "invalid"),
+        "publication_date_feedback": Output(ids.publication_date_feedback, "children"),
+        "summary_invalid": Output(ids.summary, "invalid"),
+        "summary_feedback": Output(ids.summary_feedback, "children"),
+        "created_date_invalid": Output(ids.created_date, "invalid"),
+        "created_time_invalid": Output(ids.created_time, "invalid"),
+        "created_at_feedback": Output(ids.created_at_feedback, "children"),
+    }
+
+
+def form_value_outputs(ids: layout.BookFormIds) -> dict[str, Output]:
+    """Return the value outputs of a book form, keyed by `BookForm` field.
+
+    Args:
+        ids: Component ids of the form.
+
+    Returns:
+        One output per input value.
+    """
+    return {
+        "title": Output(ids.title, "value"),
+        "author": Output(ids.author, "value"),
+        "publication_date": Output(ids.publication_date, "value"),
+        "summary": Output(ids.summary, "value"),
+        "created_date": Output(ids.created_date, "value"),
+        "created_time": Output(ids.created_time, "value"),
+    }
+
+
+def form_value_states(ids: layout.BookFormIds) -> dict[str, State]:
+    """Return the value states of a book form, keyed by `BookForm` field.
+
+    Args:
+        ids: Component ids of the form.
+
+    Returns:
+        One state per input value.
+    """
+    return {
+        key: State(output.component_id, "value") for key, output in form_value_outputs(ids).items()
+    }
+
+
 def form_feedback(errors: dict[str, str]) -> dict[str, Any]:
-    """Map field errors onto the Register form's `invalid` flags and messages.
+    """Map field errors onto a book form's `invalid` flags and messages.
 
     Args:
         errors: Field name to message, from client-side validation or a 422.
 
     Returns:
-        Values for every feedback-related output of `submit_book`.
+        Values for every output of `form_feedback_outputs`.
     """
     return {
         "title_invalid": services.FIELD_TITLE in errors,
@@ -129,38 +186,39 @@ def register_callbacks(app: Dash, client: BooksApiClient, settings: Settings) ->
         Input(Ids.ROOT, "id"),
     )
 
+    @app.callback(
+        Output(Ids.POSTMAN_DOWNLOAD, "data"),
+        Input(Ids.POSTMAN_BUTTON, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def download_postman_collection(n_clicks: int) -> dict[str, Any]:
+        """Send the Postman collection, pointed at the public API URL.
+
+        Args:
+            n_clicks: Clicks on the download button (only used as a trigger).
+
+        Returns:
+            The file for `dcc.Download`.
+        """
+        api_key = settings.api_key if settings.postman_include_api_key else None
+        return {
+            "content": services.load_postman_collection(settings.postman_base_url, api_key),
+            "filename": services.POSTMAN_DOWNLOAD_NAME,
+            "type": "application/json",
+        }
+
     # --- Register Book --------------------------------------------------------
 
     @app.callback(
         output={
             "alert": Output(Ids.REGISTER_ALERT, "children"),
-            "title_invalid": Output(Ids.TITLE, "invalid"),
-            "title_feedback": Output(Ids.TITLE_FEEDBACK, "children"),
-            "author_invalid": Output(Ids.AUTHOR, "invalid"),
-            "author_feedback": Output(Ids.AUTHOR_FEEDBACK, "children"),
-            "publication_date_invalid": Output(Ids.PUBLICATION_DATE, "invalid"),
-            "publication_date_feedback": Output(Ids.PUBLICATION_DATE_FEEDBACK, "children"),
-            "summary_invalid": Output(Ids.SUMMARY, "invalid"),
-            "summary_feedback": Output(Ids.SUMMARY_FEEDBACK, "children"),
-            "created_date_invalid": Output(Ids.CREATED_DATE, "invalid"),
-            "created_time_invalid": Output(Ids.CREATED_TIME, "invalid"),
-            "created_at_feedback": Output(Ids.CREATED_AT_FEEDBACK, "children"),
-            "title": Output(Ids.TITLE, "value"),
-            "author": Output(Ids.AUTHOR, "value"),
-            "publication_date": Output(Ids.PUBLICATION_DATE, "value"),
-            "summary": Output(Ids.SUMMARY, "value"),
-            "created_date": Output(Ids.CREATED_DATE, "value"),
-            "created_time": Output(Ids.CREATED_TIME, "value"),
+            **form_feedback_outputs(layout.REGISTER_FORM),
+            **form_value_outputs(layout.REGISTER_FORM),
             "books_version": Output(Ids.BOOKS_VERSION, "data"),
         },
         inputs={"n_clicks": Input(Ids.SUBMIT, "n_clicks")},
         state={
-            "title": State(Ids.TITLE, "value"),
-            "author": State(Ids.AUTHOR, "value"),
-            "publication_date": State(Ids.PUBLICATION_DATE, "value"),
-            "summary": State(Ids.SUMMARY, "value"),
-            "created_date": State(Ids.CREATED_DATE, "value"),
-            "created_time": State(Ids.CREATED_TIME, "value"),
+            **form_value_states(layout.REGISTER_FORM),
             "tz_name": State(Ids.BROWSER_TZ, "data"),
             "books_version": State(Ids.BOOKS_VERSION, "data"),
         },
@@ -400,6 +458,9 @@ def register_callbacks(app: Dash, client: BooksApiClient, settings: Settings) ->
             "title": Output(Ids.DETAILS_TITLE, "children"),
             "body": Output(Ids.DETAILS_BODY, "children"),
             "active_cell": Output(Ids.RESULTS_TABLE, "active_cell"),
+            "current_book": Output(Ids.CURRENT_BOOK, "data"),
+            "edit_disabled": Output(Ids.DETAILS_EDIT, "disabled"),
+            "delete_disabled": Output(Ids.DETAILS_DELETE, "disabled"),
         },
         inputs={
             "active_cell": Input(Ids.RESULTS_TABLE, "active_cell"),
@@ -419,18 +480,27 @@ def register_callbacks(app: Dash, client: BooksApiClient, settings: Settings) ->
             tz_name: Browser timezone.
 
         Returns:
-            Modal state and content.
+            Modal state and content, plus the loaded book for Edit/Delete.
         """
-        unchanged = {"is_open": no_update, "title": no_update, "body": no_update}
+        unchanged = {
+            "is_open": no_update,
+            "title": no_update,
+            "body": no_update,
+            "active_cell": no_update,
+            "current_book": no_update,
+            "edit_disabled": no_update,
+            "delete_disabled": no_update,
+        }
         if ctx.triggered_id == Ids.DETAILS_CLOSE:
-            return {**unchanged, "is_open": False, "active_cell": no_update}
+            return {**unchanged, "is_open": False}
         # Resetting `active_cell` below re-triggers this callback with None.
         if not active_cell or active_cell.get("row_id") is None:
-            return {**unchanged, "active_cell": no_update}
+            return unchanged
 
         # Always fetch the full record: the table only holds a truncated summary.
+        book: dict[str, Any] | None = None
         try:
-            book = client.get_book(int(active_cell["row_id"]))
+            book = dict(client.get_book(int(active_cell["row_id"])))
         except ApiNotFoundError:
             title, body = (
                 "Livro não encontrado",
@@ -442,7 +512,321 @@ def register_callbacks(app: Dash, client: BooksApiClient, settings: Settings) ->
             title, body = book["title"], layout.book_details(book, tz_name)
 
         # Clearing the active cell lets the same row be clicked again later.
-        return {"is_open": True, "title": title, "body": body, "active_cell": None}
+        # Edit and Delete only make sense once the book was actually loaded.
+        return {
+            "is_open": True,
+            "title": title,
+            "body": body,
+            "active_cell": None,
+            "current_book": book,
+            "edit_disabled": book is None,
+            "delete_disabled": book is None,
+        }
+
+    # --- Edit Book ------------------------------------------------------------
+
+    @app.callback(
+        output={
+            "edit_open": Output(Ids.EDIT_MODAL, "is_open"),
+            "details_open": Output(Ids.DETAILS_MODAL, "is_open", allow_duplicate=True),
+            "alert": Output(Ids.EDIT_ALERT, "children"),
+            **form_feedback_outputs(layout.EDIT_FORM),
+            **form_value_outputs(layout.EDIT_FORM),
+        },
+        inputs={
+            "edit_clicks": Input(Ids.DETAILS_EDIT, "n_clicks"),
+            "cancel_clicks": Input(Ids.EDIT_CANCEL, "n_clicks"),
+        },
+        state={
+            "book": State(Ids.CURRENT_BOOK, "data"),
+            "tz_name": State(Ids.BROWSER_TZ, "data"),
+        },
+        prevent_initial_call=True,
+    )
+    def toggle_edit_form(
+        edit_clicks: int,
+        cancel_clicks: int,
+        book: dict[str, Any] | None,
+        tz_name: str | None,
+    ) -> dict[str, Any]:
+        """Open the Edit modal filled with the current book, or cancel back to details.
+
+        Args:
+            edit_clicks: Clicks on Edit in the details modal.
+            cancel_clicks: Clicks on Cancel in the Edit modal.
+            book: The book shown in the details modal.
+            tz_name: Browser timezone, used to show "Created At" in local time.
+
+        Returns:
+            Modal states and, when opening, the form values with no errors.
+        """
+        keep_form = {key: no_update for key in form_value_outputs(layout.EDIT_FORM)}
+        if ctx.triggered_id == Ids.EDIT_CANCEL or not book:
+            # Cancelling returns to the details of the same book.
+            return {
+                "edit_open": False,
+                "details_open": bool(book),
+                "alert": no_update,
+                **form_feedback({}),
+                **keep_form,
+            }
+
+        form = services.book_to_form(book, tz_name)
+        return {
+            "edit_open": True,
+            "details_open": False,
+            "alert": None,
+            **form_feedback({}),
+            "title": form.title,
+            "author": form.author,
+            "publication_date": form.publication_date,
+            "summary": form.summary,
+            "created_date": form.created_date,
+            "created_time": form.created_time,
+        }
+
+    @app.callback(
+        output={
+            "alert": Output(Ids.EDIT_ALERT, "children", allow_duplicate=True),
+            **{
+                key: Output(output.component_id, output.component_property, allow_duplicate=True)
+                for key, output in form_feedback_outputs(layout.EDIT_FORM).items()
+            },
+            "edit_open": Output(Ids.EDIT_MODAL, "is_open", allow_duplicate=True),
+            "action_alert": Output(Ids.BOOK_ACTION_ALERT, "children"),
+            "current_book": Output(Ids.CURRENT_BOOK, "data", allow_duplicate=True),
+            "books_version": Output(Ids.BOOKS_VERSION, "data", allow_duplicate=True),
+        },
+        inputs={"n_clicks": Input(Ids.EDIT_SAVE, "n_clicks")},
+        state={
+            **form_value_states(layout.EDIT_FORM),
+            "book": State(Ids.CURRENT_BOOK, "data"),
+            "tz_name": State(Ids.BROWSER_TZ, "data"),
+            "books_version": State(Ids.BOOKS_VERSION, "data"),
+        },
+        running=[
+            (Output(Ids.EDIT_SAVE, "disabled"), True, False),
+            (Output(Ids.EDIT_SAVE_SPINNER, "style"), layout.SPINNER_VISIBLE, layout.SPINNER_HIDDEN),
+        ],
+        prevent_initial_call=True,
+    )
+    def save_book(
+        n_clicks: int,
+        title: str | None,
+        author: str | None,
+        publication_date: str | None,
+        summary: str | None,
+        created_date: str | None,
+        created_time: str | None,
+        book: dict[str, Any] | None,
+        tz_name: str | None,
+        books_version: int | None,
+    ) -> dict[str, Any]:
+        """Validate the Edit form and send only the changed fields to the API.
+
+        Args:
+            n_clicks: Clicks on Save (only used as a trigger).
+            title: Title input value.
+            author: Author input value.
+            publication_date: Publication date input value.
+            summary: Summary textarea value.
+            created_date: "Created At" date (required when editing).
+            created_time: "Created At" time.
+            book: The book as it was when the form was opened.
+            tz_name: Browser timezone, used to convert "Created At" to UTC.
+            books_version: Counter bumped so the other screens reload.
+
+        Returns:
+            Values for every output: form feedback while editing; on success,
+            the modal closes, a confirmation appears above the results and
+            `books_version` is bumped.
+        """
+        stay_open: dict[str, Any] = {
+            "edit_open": no_update,
+            "action_alert": no_update,
+            "current_book": no_update,
+            "books_version": no_update,
+        }
+        if not book:
+            return {
+                "alert": layout.alert("Nenhum livro selecionado para edição."),
+                **form_feedback({}),
+                **stay_open,
+            }
+
+        form = services.BookForm(
+            title, author, publication_date, summary, created_date, created_time
+        )
+        errors = services.validate_book_form(form, tz_name, require_created_at=True)
+        if errors:
+            return {
+                "alert": layout.alert(
+                    "Corrija os campos destacados.", "warning", "exclamation-circle"
+                ),
+                **form_feedback(errors),
+                **stay_open,
+            }
+
+        payload = services.build_update_payload(form, tz_name, book)
+        if not payload:
+            return {
+                "alert": None,
+                **form_feedback({}),
+                **stay_open,
+                "edit_open": False,
+                "action_alert": layout.alert(
+                    "Nenhuma alteração para salvar.", "info", "info-circle"
+                ),
+            }
+
+        try:
+            updated = client.update_book(int(book["id"]), payload)
+        except ApiValidationError as exc:
+            logger.info("API rejected the edit: %s", exc.field_errors)
+            extra = unmapped_errors(exc.field_errors)
+            message = " ".join(["A API recusou alguns campos.", *extra])
+            return {
+                "alert": layout.alert(message, "warning", "exclamation-circle"),
+                **form_feedback(exc.field_errors),
+                **stay_open,
+            }
+        except ApiNotFoundError:
+            # Someone else deleted it meanwhile: close and refresh the lists.
+            return {
+                "alert": None,
+                **form_feedback({}),
+                "edit_open": False,
+                "action_alert": layout.alert(
+                    "Este livro não existe mais.", "warning", "question-circle"
+                ),
+                "current_book": None,
+                "books_version": (books_version or 0) + 1,
+            }
+        except ApiError as exc:
+            logger.warning("Could not update book %s: %s", book.get("id"), exc)
+            return {"alert": error_alert(exc), **form_feedback({}), **stay_open}
+
+        return {
+            "alert": None,
+            **form_feedback({}),
+            "edit_open": False,
+            "action_alert": layout.alert(
+                f'"{updated["title"]}" foi atualizado com sucesso.', "success", "check-circle"
+            ),
+            "current_book": dict(updated),
+            "books_version": (books_version or 0) + 1,
+        }
+
+    # --- Delete Book ----------------------------------------------------------
+
+    @app.callback(
+        output={
+            "delete_open": Output(Ids.DELETE_MODAL, "is_open"),
+            "details_open": Output(Ids.DETAILS_MODAL, "is_open", allow_duplicate=True),
+            "message": Output(Ids.DELETE_MESSAGE, "children"),
+            "alert": Output(Ids.DELETE_ALERT, "children"),
+        },
+        inputs={
+            "delete_clicks": Input(Ids.DETAILS_DELETE, "n_clicks"),
+            "cancel_clicks": Input(Ids.DELETE_CANCEL, "n_clicks"),
+        },
+        state={"book": State(Ids.CURRENT_BOOK, "data")},
+        prevent_initial_call=True,
+    )
+    def toggle_delete_confirmation(
+        delete_clicks: int, cancel_clicks: int, book: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        """Ask for confirmation before deleting, or cancel back to details.
+
+        Args:
+            delete_clicks: Clicks on Delete in the details modal.
+            cancel_clicks: Clicks on Cancel in the confirmation modal.
+            book: The book shown in the details modal.
+
+        Returns:
+            Modal states and the confirmation text.
+        """
+        if ctx.triggered_id == Ids.DELETE_CANCEL or not book:
+            return {
+                "delete_open": False,
+                "details_open": bool(book),
+                "message": no_update,
+                "alert": no_update,
+            }
+        return {
+            "delete_open": True,
+            "details_open": False,
+            "message": layout.delete_message(book),
+            "alert": None,
+        }
+
+    @app.callback(
+        output={
+            "delete_open": Output(Ids.DELETE_MODAL, "is_open", allow_duplicate=True),
+            "alert": Output(Ids.DELETE_ALERT, "children", allow_duplicate=True),
+            "action_alert": Output(Ids.BOOK_ACTION_ALERT, "children", allow_duplicate=True),
+            "current_book": Output(Ids.CURRENT_BOOK, "data", allow_duplicate=True),
+            "books_version": Output(Ids.BOOKS_VERSION, "data", allow_duplicate=True),
+        },
+        inputs={"n_clicks": Input(Ids.DELETE_CONFIRM, "n_clicks")},
+        state={
+            "book": State(Ids.CURRENT_BOOK, "data"),
+            "books_version": State(Ids.BOOKS_VERSION, "data"),
+        },
+        running=[
+            (Output(Ids.DELETE_CONFIRM, "disabled"), True, False),
+            (Output(Ids.DELETE_SPINNER, "style"), layout.SPINNER_VISIBLE, layout.SPINNER_HIDDEN),
+        ],
+        prevent_initial_call=True,
+    )
+    def delete_book(
+        n_clicks: int, book: dict[str, Any] | None, books_version: int | None
+    ) -> dict[str, Any]:
+        """Delete the current book after the user confirmed.
+
+        Args:
+            n_clicks: Clicks on the confirm button (only used as a trigger).
+            book: The book to delete.
+            books_version: Counter bumped so the other screens reload.
+
+        Returns:
+            Modal state, alerts and, on success, a bumped `books_version`.
+        """
+        if not book:
+            return {
+                "delete_open": False,
+                "alert": no_update,
+                "action_alert": no_update,
+                "current_book": no_update,
+                "books_version": no_update,
+            }
+
+        try:
+            client.delete_book(int(book["id"]))
+        except ApiNotFoundError:
+            # Already gone: the outcome the user wanted, so just say so and refresh.
+            message = layout.alert("Este livro já havia sido excluído.", "info", "info-circle")
+        except ApiError as exc:
+            logger.warning("Could not delete book %s: %s", book.get("id"), exc)
+            return {
+                "delete_open": no_update,
+                "alert": error_alert(exc),
+                "action_alert": no_update,
+                "current_book": no_update,
+                "books_version": no_update,
+            }
+        else:
+            message = layout.alert(
+                f'"{book.get("title")}" foi excluído.', "success", "check-circle"
+            )
+
+        return {
+            "delete_open": False,
+            "alert": None,
+            "action_alert": message,
+            "current_book": None,
+            "books_version": (books_version or 0) + 1,
+        }
 
     # --- Dashboard ----------------------------------------------------------------
 

@@ -12,6 +12,8 @@ Values set in the environment take precedence over the `.env` file.
 | `DASH_HOST`           | `127.0.0.1`             | Host of the Dash development server      |
 | `DASH_PORT`           | `8050`                  | Port of the Dash development server      |
 | `DASH_DEBUG`          | `true`                  | Dev server auto-reload + browser refresh |
+| `PUBLIC_API_URL`      | `API_BASE_URL`          | API URL written in the Postman download  |
+| `POSTMAN_INCLUDE_API_KEY` | `false`             | Put `API_KEY` in the Postman download    |
 """
 
 import os
@@ -64,6 +66,11 @@ class Settings:
         debug: Whether the development server runs in debug mode, restarting on
             code changes and refreshing the browser automatically. Only used by
             `python -m library_ui.app`; gunicorn ignores it.
+        public_api_url: API URL reachable from the user's machine, written into
+            the downloadable Postman collection. `api_base_url` may be an
+            internal Docker name, so it can differ. Empty means `api_base_url`.
+        postman_include_api_key: Whether the downloaded collection carries
+            `api_key`. Only for public demos, where the key is already public.
     """
 
     api_base_url: str = "http://localhost:8000"
@@ -74,6 +81,13 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 8050
     debug: bool = True
+    public_api_url: str = ""
+    postman_include_api_key: bool = False
+
+    @property
+    def postman_base_url(self) -> str:
+        """Base URL written into the downloadable Postman collection."""
+        return self.public_api_url or self.api_base_url
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Self:
@@ -100,4 +114,7 @@ class Settings:
             host=env.get("DASH_HOST", defaults.host),
             port=int(env.get("DASH_PORT", defaults.port)),
             debug=env.get("DASH_DEBUG", str(defaults.debug)).strip().lower() in TRUTHY,
+            public_api_url=env.get("PUBLIC_API_URL", "").strip().rstrip("/"),
+            postman_include_api_key=env.get("POSTMAN_INCLUDE_API_KEY", "").strip().lower()
+            in TRUTHY,
         )

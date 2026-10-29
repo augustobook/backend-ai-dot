@@ -124,6 +124,49 @@ def test_get_book_404_raises_not_found(api: respx.MockRouter, client: BooksApiCl
         client.get_book(42)
 
 
+def test_update_book_patches_payload_and_returns_book(
+    api: respx.MockRouter, client: BooksApiClient
+) -> None:
+    """`update_book` sends a PATCH with only the given fields."""
+    route = api.patch("/books/7").mock(
+        return_value=httpx.Response(200, json=make_book(7, title="New"))
+    )
+
+    book = client.update_book(7, {"title": "New"})
+
+    assert book["title"] == "New"
+    assert route.calls.last.request.read() == b'{"title":"New"}'
+
+
+def test_update_book_404_raises_not_found(api: respx.MockRouter, client: BooksApiClient) -> None:
+    """Editing a missing book raises `ApiNotFoundError`."""
+    api.patch("/books/9").mock(
+        return_value=httpx.Response(404, json={"detail": "Book with id 9 not found"})
+    )
+
+    with pytest.raises(ApiNotFoundError):
+        client.update_book(9, {"title": "New"})
+
+
+def test_delete_book_sends_delete(api: respx.MockRouter, client: BooksApiClient) -> None:
+    """`delete_book` sends a DELETE and accepts the empty 204 response."""
+    route = api.delete("/books/7").mock(return_value=httpx.Response(204))
+
+    client.delete_book(7)
+
+    assert route.called
+
+
+def test_delete_book_404_raises_not_found(api: respx.MockRouter, client: BooksApiClient) -> None:
+    """Deleting a missing book raises `ApiNotFoundError`."""
+    api.delete("/books/9").mock(
+        return_value=httpx.Response(404, json={"detail": "Book with id 9 not found"})
+    )
+
+    with pytest.raises(ApiNotFoundError):
+        client.delete_book(9)
+
+
 @pytest.mark.parametrize(
     "error", [httpx.ConnectError("refused"), httpx.ReadTimeout("slow")], ids=["refused", "timeout"]
 )

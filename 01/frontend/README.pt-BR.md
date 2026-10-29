@@ -94,13 +94,18 @@ Isso tem algumas consequências:
   busca), botões Buscar e Limpar, contador ("Exibindo livros 1–10") e tabela ordenável com
   título, autor, publicação (`15/01/2020`), cadastro (`28/10/2026 14:30`) e o resumo truncado.
   Tem paginação Anterior/Próxima e o estado vazio "Nenhum livro encontrado". Ao clicar em uma
-  linha, abre um modal com os detalhes completos, buscados em `GET /books/{id}`.
+  linha, abre um modal com os detalhes completos, buscados em `GET /books/{id}`, e os botões
+  **Editar** (formulário já preenchido, mesmas validações do cadastro; só os campos alterados
+  são enviados em `PATCH /books/{id}`) e **Excluir** (pede confirmação antes do
+  `DELETE /books/{id}`). A edição e a exclusão não eram pedidas na prova; foram incluídas para
+  completar o CRUD. Depois de editar ou excluir, a busca e o painel são recarregados.
 - **Painel:** quatro cards (total de livros, autores distintos, livro mais antigo e mais
   recente), gráfico de barras de livros por ano de publicação, gráfico de barras horizontais
   com o top 10 autores, botão Atualizar e estado vazio quando não há livros. Também atualiza
   sozinho depois que um livro é cadastrado.
 
-A navbar mostra "Biblioteca Virtual | para DOT Digital Group", e o rodapé e o título da aba do
+A navbar mostra "Biblioteca Virtual | para DOT Digital Group" e o botão **Coleção Postman**,
+que baixa a collection de testes da API já apontada para a API configurada (`PUBLIC_API_URL`), e o rodapé e o título da aba do
 navegador também citam a DOT Digital Group. Se a API estiver fora do ar, cada tela mostra "Não
 foi possível conectar à API…" em vez de quebrar. O layout é responsivo: no celular, os campos
 ficam empilhados.
@@ -183,6 +188,8 @@ chave da API fica só na sua máquina.
 | `DASH_HOST`           | `127.0.0.1`             | Host do servidor de desenvolvimento                  |
 | `DASH_PORT`           | `8050`                  | Porta do servidor de desenvolvimento                 |
 | `DASH_DEBUG`          | `true`                  | Só no servidor de desenvolvimento: reinicia ao mudar o código e atualiza o navegador (use `false` para desligar) |
+| `PUBLIC_API_URL`      | (`API_BASE_URL`)        | URL da API gravada na Coleção Postman baixada (a URL que o navegador enxerga, não o nome interno do Docker) |
+| `POSTMAN_INCLUDE_API_KEY` | `false`             | Grava a `API_KEY` na coleção baixada. Só para demonstrações públicas |
 
 ## Testes e qualidade
 

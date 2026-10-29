@@ -59,6 +59,25 @@ class BookRepositoryProtocol(Protocol):
         """
         ...
 
+    def update(self, book: Book) -> Book:
+        """Persist the changes made to a stored book.
+
+        Args:
+            book: A book previously returned by this repository, already modified.
+
+        Returns:
+            The updated book.
+        """
+        ...
+
+    def delete(self, book: Book) -> None:
+        """Remove a stored book.
+
+        Args:
+            book: A book previously returned by this repository.
+        """
+        ...
+
     def search(self, *, title: str | None, author: str | None, skip: int, limit: int) -> list[Book]:
         """Search books by partial, case-insensitive title and/or author.
 
@@ -109,6 +128,28 @@ class BookRepository:
             The book, or `None` if it does not exist.
         """
         return self._session.get(Book, book_id)
+
+    def update(self, book: Book) -> Book:
+        """Commit the changes made to a stored book.
+
+        Args:
+            book: A book loaded by this repository, already modified.
+
+        Returns:
+            The book, refreshed from the database.
+        """
+        self._session.commit()
+        self._session.refresh(book)
+        return book
+
+    def delete(self, book: Book) -> None:
+        """Delete a stored book and commit the transaction.
+
+        Args:
+            book: A book loaded by this repository.
+        """
+        self._session.delete(book)
+        self._session.commit()
 
     def search(self, *, title: str | None, author: str | None, skip: int, limit: int) -> list[Book]:
         """Search books by partial, case-insensitive title and/or author.
