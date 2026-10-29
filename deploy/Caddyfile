@@ -1,31 +1,41 @@
-# One site block per host name. Every name points to the same server IP in DNS;
-# Caddy reads the requested host (Host header / TLS SNI) and picks the block.
-# {$DOMAIN} comes from docker-compose (e.g. backend-ai-dot.oladata.com.br).
-# For each block Caddy gets an HTTPS certificate automatically (Let's Encrypt
-# for a public domain, a local CA for *.localhost).
+# Internal router: one site block per host name. The server's front Caddy
+# (another project) terminates HTTPS on ports 80/443 and forwards the DOMAIN
+# hosts here over plain HTTP, keeping the original Host header; this Caddy
+# reads it and picks the block. {$DOMAIN} comes from docker-compose
+# (e.g. backend-ai-dot.oladata.com.br).
 
-{$DOMAIN} {
+{
+	servers {
+		# Keep the real client IP and scheme (X-Forwarded-*) sent by the front
+		# Caddy instead of replacing them with its own address.
+		trusted_proxies static private_ranges
+	}
+}
+
+# The `http://` prefix turns off automatic HTTPS: certificates are the front
+# Caddy's job.
+http://{$DOMAIN} {
 	root * /srv/landing
 	file_server
 	encode zstd gzip
 }
 
-01.{$DOMAIN} {
+http://01.{$DOMAIN} {
 	reverse_proxy library-ui:8050
 	encode zstd gzip
 }
 
-api-01.{$DOMAIN} {
+http://api-01.{$DOMAIN} {
 	reverse_proxy library-api:8000
 	encode zstd gzip
 }
 
 # Chainlit streams over WebSockets; reverse_proxy upgrades them transparently.
-02.{$DOMAIN} {
+http://02.{$DOMAIN} {
 	reverse_proxy chatbot:8000
 }
 
-03.{$DOMAIN} {
+http://03.{$DOMAIN} {
 	reverse_proxy search:8065
 	encode zstd gzip
 }

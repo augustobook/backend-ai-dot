@@ -47,7 +47,9 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY app ./app
 # Chainlit reads its config, welcome page and static files from the working dir.
-COPY .chainlit ./.chainlit
+# On startup it writes any missing translation file into .chainlit/translations
+# (git only keeps pt-BR.json), so that folder must belong to `app`.
+COPY --chown=app:app .chainlit ./.chainlit
 COPY public ./public
 COPY chainlit.md ./
 

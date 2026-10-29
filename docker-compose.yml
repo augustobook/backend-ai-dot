@@ -14,24 +14,28 @@
 # path, internal URLs, hosts derived from DOMAIN), overriding the project files.
 # With DOMAIN=localhost everything runs locally at https://01.localhost etc.
 #
-# Only Caddy publishes ports; the apps are reached through the Compose network
-# by service name. Caddy issues and renews the HTTPS certificates by itself.
+# Nothing here publishes ports: the server already runs a Caddy (from another
+# project) that owns ports 80/443 and the HTTPS certificates. That front Caddy
+# forwards the DOMAIN hosts to the `caddy` service below through the shared
+# Docker network PROXY_NETWORK; this one only routes each host to its app over
+# plain HTTP (see deploy/Caddyfile and the README).
 
 services:
   caddy:
     image: caddy:2.10
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp" # HTTP/3
     environment:
       DOMAIN: ${DOMAIN:-localhost}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./deploy/landing:/srv/landing:ro
-      # Certificates must survive restarts, or Let's Encrypt rate limits kick in.
       - caddy-data:/data
       - caddy-config:/config
+    networks:
+      default:
+      proxy:
+        # Name the front Caddy uses in its reverse_proxy (unique on the network).
+        aliases:
+          - backend-ai-dot-router
     depends_on:
       - library-api
       - library-ui
@@ -106,6 +110,13 @@ services:
       # Downloaded Hugging Face models (~1 GB), reused across restarts.
       - search-models:/app/.cache/huggingface
     restart: unless-stopped
+
+networks:
+  default:
+  # Existing network of the front Caddy (find it with `docker inspect`).
+  proxy:
+    name: ${PROXY_NETWORK:?Set PROXY_NETWORK in .env (Docker network of the front Caddy)}
+    external: true
 
 volumes:
   caddy-data:

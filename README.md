@@ -12,6 +12,16 @@ Este arquivo é só o mapa do repositório.
 | [`02/python_chatbot/`](02/python_chatbot) | Python Tutor: chatbot que ensina Python | LangChain, OpenAI, Chainlit, FastAPI | [02/python_chatbot/README.pt-BR.md](02/python_chatbot/README.pt-BR.md) |
 | [`03/semantic_search/`](03/semantic_search) | Busca semântica em artigos de saúde | Embeddings E5, FAISS, BM25, cross-encoder, OpenAI, Dash | [03/semantic_search/README.pt-BR.md](03/semantic_search/README.pt-BR.md) |
 
+## Acesse online
+
+| Projeto | Link |
+|---|---|
+| Página inicial | <https://backend-ai-dot.oladata.com.br> |
+| 01 — Biblioteca virtual (interface) | <https://01.backend-ai-dot.oladata.com.br> |
+| 01 — API da biblioteca (Swagger) | <https://api-01.backend-ai-dot.oladata.com.br/docs> |
+| 02 — Python Tutor (chatbot) | <https://02.backend-ai-dot.oladata.com.br> |
+| 03 — Busca semântica | <https://03.backend-ai-dot.oladata.com.br> |
+
 ## Organização das pastas
 
 ```
@@ -103,11 +113,33 @@ README: [português](03/semantic_search/README.pt-BR.md) ·
 ```bash
 cp .env.example .env          # Windows (PowerShell): Copy-Item .env.example .env
 # preencha OPENAI_API_KEY; use DOMAIN=localhost para rodar localmente
+
+# cada serviço também lê o .env do próprio projeto (env_file no docker-compose.yml)
+for dir in 01/backend 01/frontend 02/python_chatbot 03/semantic_search; do
+  [ -f "$dir/.env" ] || cp "$dir/.env.example" "$dir/.env"
+done
+
 docker compose up -d --build
 ```
 
-O [Caddy](https://caddyserver.com/) recebe todo o tráfego e encaminha cada subdomínio
-para o seu serviço, emitindo os certificados HTTPS sozinho:
+Os cinco arquivos `.env` ficam fora do git, então precisam ser criados em cada máquina
+nova (inclusive no servidor); sem algum deles o `docker compose up` falha com
+"env file not found". O `.env` da raiz tem prioridade: `DOMAIN` e as chaves definidas
+nele sobrescrevem os valores dos `.env` dos projetos.
+
+O servidor já tem um [Caddy](https://caddyserver.com/) de outro projeto nas portas
+80/443, responsável pelo HTTPS. Esta stack não publica portas: o Caddy dela é um
+roteador interno, ligado à rede Docker daquele Caddy (`PROXY_NETWORK` no `.env`), que
+encaminha cada subdomínio para o seu serviço. No Caddyfile do Caddy principal entra
+um bloco só:
+
+```
+backend-ai-dot.oladata.com.br, 01.backend-ai-dot.oladata.com.br, api-01.backend-ai-dot.oladata.com.br, 02.backend-ai-dot.oladata.com.br, 03.backend-ai-dot.oladata.com.br {
+	reverse_proxy backend-ai-dot-router:80
+}
+```
+
+Endereços:
 
 | Endereço | Serviço |
 |---|---|
@@ -117,8 +149,11 @@ para o seu serviço, emitindo os certificados HTTPS sozinho:
 | `https://02.DOMAIN` | 02 — chatbot (Chainlit) |
 | `https://03.DOMAIN` | 03 — busca semântica |
 
-Com `DOMAIN=localhost`, os endereços ficam `https://01.localhost`,
-`https://02.localhost` e assim por diante.
+Para rodar localmente, sem o Caddy principal, use `DOMAIN=localhost`, crie a rede
+com `docker network create proxy` (e `PROXY_NETWORK=proxy`) e publique a porta do
+roteador num `docker-compose.override.yml` (`services: caddy: ports: ["8080:80"]`); os
+endereços ficam `http://01.localhost:8080`, `http://02.localhost:8080` e assim por
+diante.
 
 ## Qualidade
 
